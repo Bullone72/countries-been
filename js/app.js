@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.3.0';
+const APP_VER = 'v1.6.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
