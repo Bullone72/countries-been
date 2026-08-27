@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.6.0';
+const APP_VER = 'v1.6.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -279,8 +279,18 @@ function initGlobo(feats) {
     .pointColor(colorePunto)
     .pointAltitude(altPunto)
     .pointRadius(raggioPunto)
-    .pointLabel(c => c.mostraNome ? etichettaCitta(c) : '')
-    .onPointClick(c => toggleCitta(c.id));
+    .pointLabel(c => etichettaCitta(c))
+    .onPointClick(c => toggleCitta(c.id))
+    /* etichette con il nome sempre visibili accanto alle città visitate/casa */
+    .labelsData([])
+    .labelLat(d => d.lat)
+    .labelLng(d => d.lon)
+    .labelText(d => d.nome)
+    .labelSize(() => 0.75)
+    .labelDotRadius(() => 0.22)
+    .labelColor(d => d.casa ? '#c084fc' : '#ff6b35')
+    .labelAltitude(d => d.alt)
+    .labelResolution(2);
 
   globo.pointOfView({ lat: 25, lng: 12, altitude: 2.7 }, 0);
 
@@ -380,29 +390,46 @@ function costruisciCittaDa(gj) {
 
 function puntiVisibili() {
   const mappa = new Map();
-  const push = (c, conEtichetta) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c, { mostraNome: conEtichetta })); };
-  /* città visitate (sempre visibili, CON nome) */
+  const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
+  /* città visitate (sempre visibili) */
   for (const id of stato.visitateCitta) {
-    push(stato.cittaById.get(id) || stato.cacheCitta[id], true);
+    push(stato.cittaById.get(id) || stato.cacheCitta[id]);
   }
-  /* città della nazione selezionata (solo grandi, senza etichetta per non rallentare) */
+  /* città della nazione selezionata (solo grandi, per non appesantire il globo) */
   if (stato.selezionata) {
     (stato.cittaPerNazione.get(stato.selezionata) || [])
-      .filter(c => c.pop >= 200000)
-      .forEach(c => push(c, false));
+      .filter(c => c.pop >= 100000)
+      .forEach(c => push(c));
   }
-  /* città dove vivo (sempre visibile, CON nome) */
+  /* città dove vivo (sempre visibile) */
   if (stato.casaCitta) {
     const c = stato.cittaById.get(stato.casaCitta.id) ||
               stato.cacheCitta[stato.casaCitta.id] ||
               { id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon };
-    push(c, true);
+    push(c);
   }
   return Array.from(mappa.values());
 }
 
+/* nomi delle città da mostrare sempre scritti accanto al punto */
+function etichetteVisibili() {
+  const elenco = [];
+  const visite = [...stato.visitateCitta].map(id =>
+    stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
+  for (const c of visite) {
+    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: eCasa(c.id) });
+  }
+  if (stato.casaCitta && !stato.visitateCitta.has(stato.casaCitta.id)) {
+    const c = stato.cittaById.get(stato.casaCitta.id) || stato.cacheCitta[stato.casaCitta.id];
+    if (c) elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: true });
+  }
+  return elenco;
+}
+
 function aggiornaPunti() {
-  if (globo) globo.pointsData(puntiVisibili());
+  if (!globo) return;
+  globo.pointsData(puntiVisibili());
+  globo.labelsData(etichetteVisibili());
 }
 
 function toggleCitta(id) {
@@ -481,7 +508,7 @@ function listaFiltrata() {
 
 const MAX_RIGHE = 600;
 
-function aggiungiCittaManuale(nome, lat, lon) {
+function aggiungiCittaManuale(nome, lat, lon, ottieniNomeNazione) {
   if (!stato.selezionata) return;
   nome = (nome || '').trim();
   if (!nome) return;
@@ -517,6 +544,36 @@ function aggiungiCittaManuale(nome, lat, lon) {
   toast(`➕ "${nome}" aggiunta e segnata come visitata`);
   renderListaCitta();
   aggiornaContatoreCitta();
+  /* se non abbiamo coordinate reali, proviamo a trovarle (geocodifica) */
+  if (latOk == null || lonOk == null) {
+    geoCercaCitta(nome, id);
+  }
+}
+
+/* trova le coordinate reali di una città (gratis, via GeoNames) e sposta il punto */
+async function geoCercaCitta(nome, id) {
+  try {
+    const f = stato.featureByKey.get(stato.selezionata);
+    const nazione = (f && f.meta && f.meta.nomeEn) || '';
+    const countryCode = (f && f.meta && f.meta.a2) || '';
+    const q = encodeURIComponent(nome);
+    let url = `https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1&language=it&format=json`;
+    if (countryCode) url += `&countryCode=${countryCode}`;
+    const ris = await fetch(url);
+    if (!ris.ok) throw new Error('http');
+    const dati = await ris.json();
+    const trov = dati && dati.results && dati.results[0];
+    if (!trov) { return; }
+    const c = stato.cittaById.get(id);
+    if (!c) return;
+    c.lat = trov.latitude;
+    c.lon = trov.longitude;
+    if (trov.name && trov.name.toLowerCase() !== c.nome.toLowerCase()) c.nome = trov.name;
+    stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: c.pop };
+    salva();
+    salvaCache();
+    aggiornaPunti();
+  } catch (e) {}
 }
 
 function renderListaCitta() {

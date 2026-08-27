@@ -4,7 +4,7 @@
    l'aggiornamento su tutti i dispositivi.
    ============================================================ */
 
-const VERSIONE = 'v1.6.0';
+const VERSIONE = 'v1.6.1';
 
 /* Solo file locali + librerie essenziali (il resto viene scaricato
    a runtime e cachato automaticamente) */
