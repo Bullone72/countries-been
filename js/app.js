@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.6.1';
+const APP_VER = 'v1.7.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -292,12 +292,48 @@ function initGlobo(feats) {
     .labelAltitude(d => d.alt)
     .labelResolution(2);
 
+  /* controlli con inerzia: trascina e rilascia = rotazione dolce e fluida */
+  try {
+    const c = globo.controls();
+    if (c) {
+      c.enableDamping = true;
+      c.dampingFactor = 0.12;      // inerzia morbida (come nelle app della concorrenza)
+      c.rotateSpeed = 0.55;
+      c.zoomSpeed = 0.6;
+      c.minDistance = 100;
+      c.maxDistance = 400;
+    }
+  } catch (e) {}
+
   globo.pointOfView({ lat: 25, lng: 12, altitude: 2.7 }, 0);
 
   addEventListener('resize', () => {
     globo.width(innerWidth);
     globo.height(innerHeight);
   });
+
+  /* le etichette col nome compaiono solo quando si è abbastanza vicini
+     (zoom dentro la nazione); dal largo restano solo i punti colorati */
+  addEventListener('pointerdown', aggiornaEtichetteZoometta);
+  addEventListener('wheel', aggiornaEtichetteZoometta, { passive: true });
+  let raf = null;
+  const loop = () => {
+    aggiornaEtichetteZoometta();
+    raf = requestAnimationFrame(loop);
+  };
+  raf = requestAnimationFrame(loop);
+}
+
+let ultimaSogliaZoom = null;
+function aggiornaEtichetteZoometta() {
+  const cam = globo && globo.camera && globo.camera();
+  if (!cam) return;
+  const dist = cam.position.length();       // distanza camera dal centro del globo
+  const zoomata = dist < 100;               // vicini = si è dentro la nazione
+  if (zoomata !== ultimaSogliaZoom) {
+    ultimaSogliaZoom = zoomata;
+    aggiornaPunti();
+  }
 }
 
 function aggiornaPoligoni() {
@@ -395,11 +431,18 @@ function puntiVisibili() {
   for (const id of stato.visitateCitta) {
     push(stato.cittaById.get(id) || stato.cacheCitta[id]);
   }
-  /* città della nazione selezionata (solo grandi, per non appesantire il globo) */
+  /* città della nazione selezionata: principali sempre; quando si zoom-in
+     mostriamo anche quelle più piccole ma solo le più vicine alla vista */
   if (stato.selezionata) {
-    (stato.cittaPerNazione.get(stato.selezionata) || [])
-      .filter(c => c.pop >= 100000)
-      .forEach(c => push(c));
+    let lista = (stato.cittaPerNazione.get(stato.selezionata) || []);
+    if (ultimaSogliaZoom) {
+      /* zoom dentro la nazione: mostra città da 50k in su (per i nomi) */
+      lista = lista.filter(c => c.pop >= 50000);
+    } else {
+      /* vista da lontano: solo le grandi, per fluidità */
+      lista = lista.filter(c => c.pop >= 200000);
+    }
+    lista.forEach(c => push(c));
   }
   /* città dove vivo (sempre visibile) */
   if (stato.casaCitta) {
@@ -411,8 +454,11 @@ function puntiVisibili() {
   return Array.from(mappa.values());
 }
 
-/* nomi delle città da mostrare sempre scritti accanto al punto */
+/* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
 function etichetteVisibili() {
+  const cam = globo && globo.camera && globo.camera();
+  const dist = cam ? cam.position.length() : Infinity;
+  if (dist >= 100) return [];   // far dallo zoom: niente nomi, meno confusione
   const elenco = [];
   const visite = [...stato.visitateCitta].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
