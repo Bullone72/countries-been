@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.7.0';
+const APP_VER = 'v1.7.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -290,7 +290,7 @@ function initGlobo(feats) {
     .labelDotRadius(() => 0.22)
     .labelColor(d => d.casa ? '#c084fc' : '#ff6b35')
     .labelAltitude(d => d.alt)
-    .labelResolution(2);
+    .labelResolution(1);
 
   /* controlli con inerzia: trascina e rilascia = rotazione dolce e fluida */
   try {
@@ -316,20 +316,25 @@ function initGlobo(feats) {
      (zoom dentro la nazione); dal largo restano solo i punti colorati */
   addEventListener('pointerdown', aggiornaEtichetteZoometta);
   addEventListener('wheel', aggiornaEtichetteZoometta, { passive: true });
-  let raf = null;
-  const loop = () => {
-    aggiornaEtichetteZoometta();
-    raf = requestAnimationFrame(loop);
-  };
-  raf = requestAnimationFrame(loop);
+  /* rileva anche la fine dell'inerzia (rotazione dolce) senza loop continuo */
+  setInterval(() => aggiornaEtichetteZoometta(), 600);
 }
 
 let ultimaSogliaZoom = null;
+
+/* legge l'altitude corrente (API garantita di globe.gl: pointOfView restituisce
+   {lat,lng,altitude}). Più l'altitude è bassa <-> più si è vicini (zoom in). */
+function liveAltitudine() {
+  try {
+    const pov = globo.pointOfView();
+    return (pov && typeof pov.altitude === 'number') ? pov.altitude : null;
+  } catch (e) { return null; }
+}
+
 function aggiornaEtichetteZoometta() {
-  const cam = globo && globo.camera && globo.camera();
-  if (!cam) return;
-  const dist = cam.position.length();       // distanza camera dal centro del globo
-  const zoomata = dist < 100;               // vicini = si è dentro la nazione
+  const alt = liveAltitudine();
+  if (alt == null) return;
+  const zoomata = alt < 1.2;   // sotto: si è dentro la nazione -> mostra nomi
   if (zoomata !== ultimaSogliaZoom) {
     ultimaSogliaZoom = zoomata;
     aggiornaPunti();
@@ -456,9 +461,8 @@ function puntiVisibili() {
 
 /* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
 function etichetteVisibili() {
-  const cam = globo && globo.camera && globo.camera();
-  const dist = cam ? cam.position.length() : Infinity;
-  if (dist >= 100) return [];   // far dallo zoom: niente nomi, meno confusione
+  const alt = liveAltitudine();
+  if (alt == null || alt >= 1.2) return [];   // far dallo zoom: niente nomi
   const elenco = [];
   const visite = [...stato.visitateCitta].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
