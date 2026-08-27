@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b1020">
+<title>Countries Been 3D</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="caricamento">
+  <div class="spinner"></div>
+  <div id="car-testo">Caricamento mappamondo…</div>
+</div>
+
+<div id="globeViz"></div>
+
+<header class="hud">
+  <div class="card stats">
+    <div class="riga"><span>🌍 Nazioni visitate</span><span class="valore" id="st-nazioni">0/195</span></div>
+    <div class="barra"><i id="st-barra"></i></div>
+    <div class="riga pct"><span id="st-percento">0% del mondo</span></div>
+    <div class="riga"><span>🏙️ Città visitate</span><span class="valore" id="st-citta">0</span></div>
+    <div class="riga riga-casa" id="riga-casa"><span>🏠 Dove vivo</span><span class="valore" id="st-casa">tocca qui</span></div>
+    <div class="riga" style="font-size:10px;color:#475569;margin-top:4px"><span id="st-ver">v—</span></div>
+  </div>
+  <div class="azioni">
+    <button class="btn" id="bt-casa" title="Dove vivo">🏠</button>
+    <button class="btn" id="bt-help" title="Aiuto">?</button>
+    <button class="btn" id="bt-export" title="Esporta backup dati">⬇</button>
+    <button class="btn" id="bt-import" title="Importa backup dati">⬆</button>
+  </div>
+</header>
+
+<input type="file" id="file-input" accept=".json,application/json" hidden>
+
+<section id="pannello"></section>
+<div id="toast"></div>
+
+<div id="diag"></div>
+
+<div class="modale" id="modale-casa">
+  <div class="m-box">
+    <h3 id="casa-titolo">🏠 Dove vivo</h3>
+    <input class="p-ricerca" id="casa-ricerca" placeholder="Cerca…" autocomplete="off">
+    <div class="p-lista" id="casa-lista"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-visita" id="casa-solo-nazione" style="flex:1;margin:0;display:none">Solo la nazione</button>
+      <button class="btn-visita" id="casa-togli" style="flex:1;margin:0;background:rgba(148,163,184,.12);border-color:#94a3b8;color:#cbd5e1">Togli</button>
+      <button class="btn-visita attiva" id="casa-chiudi" style="flex:1;margin:0">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div class="modale" id="modale-help">
+  <div class="m-box">
+    <h3>Come funziona</h3>
+    <ul>
+      <li><b>Tocca una nazione</b> sul mappamondo per selezionarla: si colorerà di azzurro e vedrai l'elenco delle sue città.</li>
+      <li>Premi <b>«Segna come visitata»</b>: la nazione diventa verde.</li>
+      <li>Tocca le <b>città</b> nell'elenco (o i puntini sul globo) per segnare quelle visitate: diventano dorate.</li>
+      <li>Tocca il mare per chiudere il pannello. Il globo ruota da solo finché non tocchi lo schermo.</li>
+      <li>I dati restano salvati sul telefono anche chiudendo l'app.</li>
+      <li>Usa <b>⬇ Esporta</b> di tanto in tanto per fare un backup (file JSON) e <b>⬆ Importa</b> per ripristinarlo o spostarlo su un altro telefono.</li>
+    </ul>
+    <p><b>Aggiornamenti:</b> l'app si aggiorna da sola quando pubblichi una nuova versione online: basta chiuderla e riaprirla, senza reinstallare nulla.</p>
+    <button class="btn-visita attiva" id="help-chiudi" style="width:100%">Ho capito</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="https://unpkg.com/globe.gl/dist/globe.gl.min.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(r=>{
+    if(r.waiting) r.waiting.postMessage({type:'skip-waiting'});
+  });
+  navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload());
+}
+</script>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
