@@ -29,10 +29,7 @@
     <div class="riga" style="font-size:10px;color:#475569;margin-top:4px"><span id="st-ver">v—</span></div>
   </div>
   <div class="azioni">
-    <button class="btn" id="bt-casa" title="Dove vivo">🏠</button>
-    <button class="btn" id="bt-help" title="Aiuto">?</button>
-    <button class="btn" id="bt-export" title="Esporta backup dati">⬇</button>
-    <button class="btn" id="bt-import" title="Importa backup dati">⬆</button>
+    <button class="btn" id="bt-imp" title="Impostazioni">⚙️</button>
   </div>
 </header>
 
@@ -69,6 +66,31 @@
     </ul>
     <p><b>Aggiornamenti:</b> l'app si aggiorna da sola quando pubblichi una nuova versione online: basta chiuderla e riaprirla, senza reinstallare nulla.</p>
     <button class="btn-visita attiva" id="help-chiudi" style="width:100%">Ho capito</button>
+  </div>
+</div>
+
+<div class="modale" id="modale-imp">
+  <div class="m-box">
+    <h3>⚙️ Impostazioni</h3>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+      <button class="btn-visita" id="imp-casa" style="margin:0;text-align:left">
+        🏠<span style="display:inline-block;margin-left:8px">Dove vivo</span>
+      </button>
+      <button class="btn-visita" id="imp-export" style="margin:0;text-align:left">
+        ⬇️<span style="display:inline-block;margin-left:8px">Esporta salvataggio (backup)</span>
+      </button>
+      <button class="btn-visita" id="imp-import" style="margin:0;text-align:left">
+        ⬆️<span style="display:inline-block;margin-left:8px">Importa salvataggio</span>
+      </button>
+      <button class="btn-visita" id="imp-aggiorna" style="margin:0;text-align:left;background:rgba(245,158,11,.12);border-color:#f59e0b;color:#fbbf24">
+        🔄<span style="display:inline-block;margin-left:8px">Aggiorna app (risolve problemi di versione)</span>
+      </button>
+      <button class="btn-visita" id="imp-help" style="margin:0;text-align:left">
+        ❓<span style="display:inline-block;margin-left:8px">Come funziona</span>
+      </button>
+      <button class="btn-visita attiva" id="imp-chiudi" style="margin:0">Chiudi</button>
+    </div>
   </div>
 </div>
 

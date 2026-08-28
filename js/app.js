@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.7.1';
+const APP_VER = 'v1.8.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -286,8 +286,8 @@ function initGlobo(feats) {
     .labelLat(d => d.lat)
     .labelLng(d => d.lon)
     .labelText(d => d.nome)
-    .labelSize(() => 0.75)
-    .labelDotRadius(() => 0.22)
+    .labelSize(() => 0.5)
+    .labelDotRadius(() => 0.16)
     .labelColor(d => d.casa ? '#c084fc' : '#ff6b35')
     .labelAltitude(d => d.alt)
     .labelResolution(1);
@@ -334,7 +334,7 @@ function liveAltitudine() {
 function aggiornaEtichetteZoometta() {
   const alt = liveAltitudine();
   if (alt == null) return;
-  const zoomata = alt < 1.2;   // sotto: si è dentro la nazione -> mostra nomi
+  const zoomata = alt < 0.5;   // sotto: si è davvero vicini -> mostra i nomi
   if (zoomata !== ultimaSogliaZoom) {
     ultimaSogliaZoom = zoomata;
     aggiornaPunti();
@@ -462,7 +462,7 @@ function puntiVisibili() {
 /* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
 function etichetteVisibili() {
   const alt = liveAltitudine();
-  if (alt == null || alt >= 1.2) return [];   // far dallo zoom: niente nomi
+  if (alt == null || alt >= 0.5) return [];   // non ancora abbastanza vicini: niente nomi
   const elenco = [];
   const visite = [...stato.visitateCitta].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
@@ -600,30 +600,47 @@ function aggiungiCittaManuale(nome, lat, lon, ottieniNomeNazione) {
   }
 }
 
-/* trova le coordinate reali di una città (gratis, via GeoNames) e sposta il punto */
+/* trova le coordinate reali di una città (gratis, via Open-Meteo) e sposta il punto */
 async function geoCercaCitta(nome, id) {
+  const f = stato.featureByKey.get(stato.selezionata);
+  const countryCode = (f && f.meta && f.meta.a2) || '';
+  const q = encodeURIComponent(nome);
+
+  /* 1° tentativo: col filtro della nazione (match corretto) */
+  let trov = null;
+  if (countryCode) {
+    trov = await geoCerca(q, 10);
+    trov = (trov || []).find(r => (r.country_code || r.countryCode) === countryCode) || null;
+  }
+  /* 2° tentativo: senza filtro (fallback: abbinami solo il primo risultato) */
+  if (!trov) {
+    const lista = await geoCerca(q, 5);
+    trov = (lista && lista[0]) || null;
+  }
+  if (!trov) {
+    toast('⚠️ Non ho trovato le coordinate esatte: la città è al centro della nazione. Riprova a scriverla meglio.', 4500);
+    return;
+  }
+  const c = stato.cittaById.get(id);
+  if (!c) return;
+  c.lat = trov.latitude;
+  c.lon = trov.longitude;
+  if (trov.name && trov.name.toLowerCase() !== c.nome.toLowerCase()) c.nome = trov.name;
+  stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: c.pop };
+  salva();
+  salvaCache();
+  aggiornaPunti();
+  toast(`📌 "${c.nome}" posizionata sulle coordinate reali (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`);
+}
+
+async function geoCerca(q, count) {
   try {
-    const f = stato.featureByKey.get(stato.selezionata);
-    const nazione = (f && f.meta && f.meta.nomeEn) || '';
-    const countryCode = (f && f.meta && f.meta.a2) || '';
-    const q = encodeURIComponent(nome);
-    let url = `https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1&language=it&format=json`;
-    if (countryCode) url += `&countryCode=${countryCode}`;
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=${count}&language=it&format=json`;
     const ris = await fetch(url);
-    if (!ris.ok) throw new Error('http');
+    if (!ris.ok) return null;
     const dati = await ris.json();
-    const trov = dati && dati.results && dati.results[0];
-    if (!trov) { return; }
-    const c = stato.cittaById.get(id);
-    if (!c) return;
-    c.lat = trov.latitude;
-    c.lon = trov.longitude;
-    if (trov.name && trov.name.toLowerCase() !== c.nome.toLowerCase()) c.nome = trov.name;
-    stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: c.pop };
-    salva();
-    salvaCache();
-    aggiornaPunti();
-  } catch (e) {}
+    return (dati && dati.results) || null;
+  } catch (e) { return null; }
 }
 
 function renderListaCitta() {
@@ -667,14 +684,7 @@ function renderListaCitta() {
   el.querySelector('#aggiungi-citta').addEventListener('click', () => {
     const nome = prompt('Nome della città:', q || '');
     if (!nome) return;
-    const coord = prompt('Coordinate (opzionale), formato: latitudine,longitudine\nEsempio: 41.89,12.49  —  oppure lascia vuoto per usare il centro della nazione:', '');
-    let lat = null, lon = null;
-    if (coord && /-?\d+(\.\d+)?\s*[,;]\s*-?\d+(\.\d+)?/.test(coord.trim())) {
-      const [a, b] = coord.split(/[,;]/);
-      lat = parseFloat(a);
-      lon = parseFloat(b);
-    }
-    aggiungiCittaManuale(nome, lat, lon);
+    aggiungiCittaManuale(nome, null, null);
   });
 }
 
@@ -789,7 +799,16 @@ function esporta() {
     cacheCitta: stato.cacheCitta,
     casa: { nazione: stato.casaNazione, citta: stato.casaCitta }
   };
-  const blob = new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' });
+  const testo = JSON.stringify(dati, null, 2);
+  /* Nell'app Android (WebView) salviamo in una cartella a scelta del telefono */
+  if (window.AndroidBridge && typeof window.AndroidBridge.salvaBackup === 'function') {
+    try {
+      const nome = 'countries-been-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      window.AndroidBridge.salvaBackup(nome, testo);
+      return;
+    } catch (e) { /* passa al metodo normale */ }
+  }
+  const blob = new Blob([testo], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'countries-been-backup.json';
@@ -938,15 +957,38 @@ window.addEventListener('error', e => {
 
 /* ---------------- eventi interfaccia ---------------- */
 
-document.getElementById('bt-export').addEventListener('click', esporta);
-document.getElementById('bt-import').addEventListener('click', () =>
-  document.getElementById('file-input').click());
+/* pulsante ⚙️ apre le impostazioni */
+document.getElementById('bt-imp').addEventListener('click', () =>
+  document.getElementById('modale-imp').classList.add('aperta'));
+document.getElementById('imp-chiudi').addEventListener('click', () =>
+  document.getElementById('modale-imp').classList.remove('aperta'));
+document.getElementById('modale-imp').addEventListener('click', e => {
+  if (e.target.id === 'modale-imp') e.target.classList.remove('aperta');
+});
+document.getElementById('imp-casa').addEventListener('click', () => {
+  document.getElementById('modale-imp').classList.remove('aperta');
+  apriCasa();
+});
+document.getElementById('imp-export').addEventListener('click', () => {
+  document.getElementById('modale-imp').classList.remove('aperta');
+  esporta();
+});
+document.getElementById('imp-import').addEventListener('click', () => {
+  document.getElementById('modale-imp').classList.remove('aperta');
+  document.getElementById('file-input').click();
+});
+document.getElementById('imp-aggiorna').addEventListener('click', () => {
+  document.getElementById('modale-imp').classList.remove('aperta');
+  forzaAggiornamento();
+});
+document.getElementById('imp-help').addEventListener('click', () => {
+  document.getElementById('modale-imp').classList.remove('aperta');
+  document.getElementById('modale-help').classList.add('aperta');
+});
 document.getElementById('file-input').addEventListener('change', e => {
   if (e.target.files && e.target.files[0]) importa(e.target.files[0]);
   e.target.value = '';
 });
-document.getElementById('bt-help').addEventListener('click', () =>
-  document.getElementById('modale-help').classList.add('aperta'));
 document.getElementById('help-chiudi').addEventListener('click', () =>
   document.getElementById('modale-help').classList.remove('aperta'));
 document.getElementById('modale-help').addEventListener('click', e => {
@@ -954,7 +996,6 @@ document.getElementById('modale-help').addEventListener('click', e => {
 });
 
 /* — dove vivo — */
-document.getElementById('bt-casa').addEventListener('click', apriCasa);
 document.getElementById('riga-casa').addEventListener('click', apriCasa);
 
 document.getElementById('casa-ricerca').addEventListener('input', e => {
@@ -1039,10 +1080,3 @@ async function forzaAggiornamento() {
   location.reload(true);
 }
 
-const btAgg = document.createElement('button');
-btAgg.id = 'bt-agg';
-btAgg.title = 'Aggiorna app (risolve problemi di cache)';
-btAgg.textContent = '🔄';
-btAgg.style.cssText = 'position:fixed;bottom:calc(env(safe-area-inset-bottom,0px)+12px);right:12px;z-index:50;width:48px;height:48px;border-radius:50%;border:1px solid #f59e0b;background:#1e1b00;color:#fbbf24;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.5)';
-btAgg.addEventListener('click', forzaAggiornamento);
-document.body.appendChild(btAgg);
