@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.5';
+const APP_VER = 'v1.9.6';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -277,7 +277,7 @@ function initGlobo(feats) {
   addEventListener('resize', ridimensiona);
 
   /* Stato di vista: lon/lat del centro + fattore di zoom */
-  const vista = { lon: 12, lat: 25, alt: 2.7 };
+  const vista = { lon: 12, lat: 25, alt: 2.2 };
   const controlli = {
     autoRotate: false,           // il globo si muove SOLO se lo muovi tu
     autoRotateSpeed: 0,
@@ -367,7 +367,7 @@ function initGlobo(feats) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const casa = eCasa(c.id);
-      const r = casa ? 3.2 : (stato.visitateCitta.has(c.id) ? 2.3 : 1.1);
+      const r = casa ? 2.6 : (stato.visitateCitta.has(c.id) ? 1.8 : 0.9);
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
@@ -660,7 +660,7 @@ function selezionaNazione(f) {
   if (globo2d) {
     const ctl = globo2d.controls();
     ctl.autoRotate = false;
-    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.7 }, 900);
+    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.4 }, 900);
   }
 }
 
