@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.6';
+const APP_VER = 'v1.9.7';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -265,7 +265,9 @@ function initGlobo(feats) {
   const ctx = canvas.getContext('2d');
 
   let W = innerWidth, H = innerHeight;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  /* su schermi molto grandi (PC con risoluzione alta) dimezziamo la risoluzione
+     interna del canvas: il globo resta nitido ma gira molto più fluido */
+  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, (W * H > 1500000 ? 1.5 : 2)));
   function ridimensiona() {
     W = innerWidth; H = innerHeight;
     canvas.width = W * dpr;
@@ -333,12 +335,14 @@ function initGlobo(feats) {
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    /* graticolo sottile */
-    ctx.beginPath();
-    path(d3.geoGraticule10());
-    ctx.strokeStyle = 'rgba(130,170,255,0.08)';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
+    /* graticolo sottile (solo da lontano: da vicino dà fastidio e pesa) */
+    if (vista.alt > 0.6) {
+      ctx.beginPath();
+      path(d3.geoGraticule10());
+      ctx.strokeStyle = 'rgba(130,170,255,0.08)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
 
     /* paesi */
     for (const f of poligoni) {
@@ -542,7 +546,7 @@ function initGlobo(feats) {
     e.preventDefault();
     const f = Math.pow(0.9, e.deltaY * 0.01);
     vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, vista.alt * f));
-    aggiornaEtichetteZoometta();
+    daRidisegnare = true;
   }, { passive: false });
 
   const MIN_ALT = 0.13;
@@ -627,6 +631,7 @@ function initGlobo(feats) {
 
 let globo2d = null;
 let ultimaSogliaZoom = null;
+let ultimaSogliaCitta = null;
 
 function liveAltitudine() {
   if (!globo2d) return null;
@@ -634,13 +639,23 @@ function liveAltitudine() {
   return pov ? pov.alt : null;
 }
 
+/* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
+const NG_CITTA = '__citta__';
+
 function aggiornaEtichetteZoometta() {
   const alt = liveAltitudine();
   if (alt == null) return;
-  const zoomata = alt < 0.35;   // solo davvero vicini -> nomi
+  /* nomi delle città: solo davvero vicini */
+  const zoomata = alt < 0.35;
   if (zoomata !== ultimaSogliaZoom) {
     ultimaSogliaZoom = zoomata;
-    aggiornaPunti();
+    aggiornaPunti(NG_CITTA);
+  }
+  /* tutte le città della nazione: da una distanza media */
+  const dentro = alt < 0.9;
+  if (dentro !== ultimaSogliaCitta) {
+    ultimaSogliaCitta = dentro;
+    aggiornaPunti(NG_CITTA);
   }
 }
 
@@ -742,13 +757,15 @@ function puntiVisibili() {
   for (const id of stato.visitateCitta) {
     push(stato.cittaById.get(id) || stato.cacheCitta[id]);
   }
-  /* città della nazione selezionata: principali sempre; quando si zoom-in
-     mostriamo anche quelle più piccole ma solo le più vicine alla vista */
+  /* città della nazione selezionata: principali sempre; quando si entra abbastanza
+     "dentro" la nazione mostriamo TUTTE le sue città (toccabili appena compaiono) */
   if (stato.selezionata) {
-    let lista = (stato.cittaPerNazione.get(stato.selezionata) || []);
-    if (ultimaSogliaZoom) {
-      /* zoom dentro la nazione: mostra città da 50k in su (per i nomi) */
-      lista = lista.filter(c => c.pop >= 50000);
+    let lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0));
+    if (ultimaSogliaCitta) {
+      /* dentro la nazione: tutte le città (con un tetto per restare fluido)
+         così le vedi apparire e le tocchi appena compaiono */
+      lista = lista.slice(0, 500);
     } else {
       /* vista da lontano: solo le grandi, per fluidità */
       lista = lista.filter(c => c.pop >= 200000);
