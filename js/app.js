@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.8.0';
+const APP_VER = 'v1.9.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -23,8 +23,8 @@ const COL = {
   nazioneSelez: 'rgba(34,211,238,0.95)',  // ciano: selezionata
   nazioneCasa: 'rgba(167,139,250,0.95)',  // viola: dove vivo
   nazioneCasaSel: 'rgba(196,181,253,0.98)',
-  cittaVista: '#ff6b35',                  // arancione brillante: città visitata
-  cittaNo: 'rgba(255,255,255,0.25)',      // bianco quasi invisibile
+  cittaVista: '#ff2d2d',                  // rosso vivo: città visitata
+  cittaNo: 'rgba(255,255,255,0.18)',      // bianco quasi invisibile
   cittaCasa: '#c084fc'                    // viola vivo: città dove vivo
 };
 
@@ -235,14 +235,14 @@ function altPunto(c) {
 
 function raggioPunto(c) {
   if (eCasa(c.id)) return 0.5;
-  if (stato.visitateCitta.has(c.id)) return 0.32;
-  return 0.1;
+  if (stato.visitateCitta.has(c.id)) return 0.22;
+  return 0.07;
 }
 
 function etichettaCitta(c) {
   const vis = stato.visitateCitta.has(c.id);
   const pref = eCasa(c.id) ? '🏠 ' : '';
-  const col = eCasa(c.id) ? '#c084fc' : (vis ? '#ff6b35' : '#93a4c8');
+  const col = eCasa(c.id) ? '#c084fc' : (vis ? '#ff2d2d' : '#93a4c8');
   return `<div style="background:rgba(11,17,34,.92);padding:6px 10px;border-radius:8px;border:1px solid rgba(120,160,255,.35)">
         <b>${pref}${esc(c.nome)}</b>${c.pop ? ` · ${formattaPop(c.pop)}` : ''}<br>
         <span style="font-size:11px;color:${col}">
@@ -252,89 +252,393 @@ function etichettaCitta(c) {
 function initGlobo(feats) {
   stato.features = feats;
 
-  /* prestazioni: niente antialiasing, niente animazione iniziale,
-     risoluzione dei poligoni ridotta -> gira fluido anche su PC lenti */
-  globo = Globe({
-    backgroundColor: 'rgba(0,0,0,0)',
-    animateIn: false,
-    rendererConfig: { antialias: false, alpha: true },
-    controlType: 'orbit'
-  })(document.getElementById('globeViz'))
-    .width(innerWidth)
-    .height(innerHeight)
-    .showAtmosphere(true)
-    .atmosphereColor('#3a86ff')
-    .atmosphereAltitude(0.22)
-    .polygonsData(feats)
-    .polygonCapColor(coloreCap)
-    .polygonCapCurvatureResolution(8)
-    .polygonSideColor(() => 'rgba(120,145,200,0.18)')
-    .polygonStrokeColor(() => 'rgba(195,215,255,0.55)')
-    .polygonAltitude(altPoligono)
-    .onPolygonClick(selezionaNazione)
-    .onGlobeClick(() => deseleziona())
-    .pointsData([])
-    .pointLat(c => c.lat)
-    .pointLng(c => c.lon)
-    .pointColor(colorePunto)
-    .pointAltitude(altPunto)
-    .pointRadius(raggioPunto)
-    .pointLabel(c => etichettaCitta(c))
-    .onPointClick(c => toggleCitta(c.id))
-    /* etichette con il nome sempre visibili accanto alle città visitate/casa */
-    .labelsData([])
-    .labelLat(d => d.lat)
-    .labelLng(d => d.lon)
-    .labelText(d => d.nome)
-    .labelSize(() => 0.5)
-    .labelDotRadius(() => 0.16)
-    .labelColor(d => d.casa ? '#c084fc' : '#ff6b35')
-    .labelAltitude(d => d.alt)
-    .labelResolution(1);
+  /* ============ mappamondo 2D su canvas (velocissimo, niente WebGL)
+     Stessa sensazione del 3D: trascina per ruotare, inerzia, auto-rotazione,
+     zoom, click sulle nazioni e sulle città. Ma si apre in un attimo.
+     ============ */
+  const el = document.getElementById('globeViz');
+  el.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:absolute;inset:0;touch-action:none;width:100%;height:100%';
+  el.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
 
-  /* controlli con inerzia: trascina e rilascia = rotazione dolce e fluida */
-  try {
-    const c = globo.controls();
-    if (c) {
-      c.enableDamping = true;
-      c.dampingFactor = 0.12;      // inerzia morbida (come nelle app della concorrenza)
-      c.rotateSpeed = 0.55;
-      c.zoomSpeed = 0.6;
-      c.minDistance = 100;
-      c.maxDistance = 400;
+  let W = innerWidth, H = innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  function ridimensiona() {
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+  ridimensiona();
+  addEventListener('resize', ridimensiona);
+
+  /* Stato di vista: lon/lat del centro + fattore di zoom */
+  const vista = { lon: 12, lat: 25, alt: 2.7 };
+  const controlli = {
+    autoRotate: true,
+    autoRotateSpeed: 0.15,
+    enableDamping: true,
+    dampingFactor: 0.12,
+    rotateSpeed: 0.55,
+    zoomSpeed: 0.6
+  };
+
+  let poligoni = feats.slice();
+  let punti = [];
+  let etichette = [];
+
+  /* projection ortografica (2D): ruota il "globo" piatto come quello 3D */
+  const proj = d3.geoOrthographic();
+  proj.clipAngle(90);
+  const path = d3.geoPath(proj);
+
+  function scalaAttuale() {
+    const base = Math.min(W, H) / 2;
+    return base * (2.2 / vista.alt);
+  }
+
+  function aggiornaProiezione() {
+    proj.scale(scalaAttuale());
+    proj.translate([W / 2, H / 2]);
+    proj.rotate([-vista.lon, -vista.lat]);
+  }
+
+  /* ---------------- rendering ---------------- */
+  const OCEANO = '#0e2a52';
+  const OCEANO_IND = '#153a6b';
+
+  function disegna() {
+    aggiornaProiezione();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, scalaAttuale() * 1.18);
+    grad.addColorStop(0, '#173a6b');
+    grad.addColorStop(1, '#0a1b38');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    /* cerchio del globo (oceano) con leggero bordo luminoso */
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, scalaAttuale(), 0, Math.PI * 2);
+    ctx.fillStyle = OCEANO;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(110,160,255,0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    /* graticolo sottile */
+    ctx.beginPath();
+    path(d3.geoGraticule10());
+    ctx.strokeStyle = 'rgba(130,170,255,0.08)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    /* paesi */
+    for (const f of poligoni) {
+      ctx.beginPath();
+      path(f);
+      ctx.fillStyle = coloreCap(f);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(200,220,255,0.45)';
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
     }
-  } catch (e) {}
 
-  globo.pointOfView({ lat: 25, lng: 12, altitude: 2.7 }, 0);
+    /* città */
+    disegnaPunti();
+    disegnaNomi();
+  }
 
-  addEventListener('resize', () => {
-    globo.width(innerWidth);
-    globo.height(innerHeight);
+  function puntoSchermo(c) {
+    const p = proj([c.lon, c.lat]);
+    if (!p) return null;
+    return p;
+  }
+
+  function disegnaPunti() {
+    for (const c of punti) {
+      const p = puntoSchermo(c);
+      if (!p) continue;
+      const casa = eCasa(c.id);
+      const r = casa ? 4.2 : (stato.visitateCitta.has(c.id) ? 3.0 : 1.6);
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fillStyle = colorePunto(c);
+      ctx.fill();
+      if (casa || stato.visitateCitta.has(c.id)) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function disegnaNomi() {
+    const alt = vista.alt;
+    if (alt >= SOGLIA_NOMI) return;
+    ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (const e of etichette) {
+      const p = puntoSchermo(e);
+      if (!p) continue;
+      ctx.fillStyle = 'rgba(8,14,32,0.82)';
+      const larg = ctx.measureText(e.nome).width;
+      roundRect(p[0] + 4, p[1] - 8, larg + 8, 16, 3);
+      ctx.fill();
+      ctx.fillStyle = e.casa ? '#c084fc' : '#ff6b6b';
+      ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+      ctx.fillText(e.nome, p[0] + 8, p[1]);
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* ---------------- interazione ---------------- */
+  let trascinando = false;
+  let ultimoX = 0, ultimoY = 0;
+  let velX = 0, velY = 0;
+  let lastTime = 0;
+  let poisIdle = Date.now();
+  let dita = new Map(); // touch: pointerId -> {x,y}
+  let distanzaDita = 0;
+  let altStartZoom = vista.alt;
+
+  function proiettaInversa(x, y) {
+    return proj.invert([x, y]);
+  }
+
+  function nazioneSotto(x, y) {
+    const g = proiettaInversa(x, y);
+    if (!g || isNaN(g[0]) || isNaN(g[1])) return null;
+    for (const f of poligoni) {
+      if (d3.geoContains(f, g)) return f;
+    }
+    return null;
+  }
+
+  function cittaSotto(x, y) {
+    let miglior = null, miglioreD = 18;
+    for (const c of punti) {
+      const p = puntoSchermo(c);
+      if (!p) continue;
+      const dx = p[0] - x, dy = p[1] - y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < miglioreD) { miglioreD = d; miglior = c; }
+    }
+    return miglior;
+  }
+
+  function pointerGiù(e) {
+    dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    poisIdle = Date.now();
+    controlli.autoRotate = false;
+    if (dita.size === 1) {
+      trascinando = true;
+      ultimoX = e.clientX; ultimoY = e.clientY;
+      velX = 0; velY = 0; lastTime = performance.now();
+    } else if (dita.size === 2) {
+      trascinando = false;
+      const [a, b] = [...dita.values()];
+      distanzaDita = Math.hypot(a.x - b.x, a.y - b.y);
+      altStartZoom = vista.alt;
+    }
+    canvas.setPointerCapture(e.pointerId);
+  }
+
+  function pointerMovi(e) {
+    if (dita.has(e.pointerId)) dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (dita.size === 1 && trascinando) {
+      const dx = e.clientX - ultimoX;
+      const dy = e.clientY - ultimoY;
+      /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
+      const gradiPerPx = 360 / (scalaAttuale() * Math.PI * 2);
+      vista.lon -= dx * gradiPerPx * controlli.rotateSpeed * 3;
+      vista.lat = Math.max(-85, Math.min(85, vista.lat + dy * gradiPerPx * controlli.rotateSpeed * 3));
+      /* normalizza lon */
+      vista.lon = ((vista.lon % 360) + 360) % 360;
+      /* inerzia */
+      const ora = performance.now();
+      const dt = Math.max(1, ora - lastTime);
+      velX = dx * gradiPerPx * controlli.rotateSpeed * 3 * (dt / 16);
+      velY = dy * gradiPerPx * controlli.rotateSpeed * 3 * (dt / 16);
+      lastTime = ora;
+      ultimoX = e.clientX; ultimoY = e.clientY;
+    } else if (dita.size === 2) {
+      const [a, b] = [...dita.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (distanzaDita > 0 && d > 0) {
+        const f = d / distanzaDita;
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / f));
+      }
+    }
+  }
+
+  function pointerSu(e) {
+    dita.delete(e.pointerId);
+    if (dita.size === 0) {
+      trascinando = false;
+      controlli.autoRotate = false;
+    }
+  }
+
+  function tap() {
+    const click = ultimoEventoClick;
+    if (!click) return;
+    const c = cittaSotto(click.x, click.y);
+    if (c) {
+      toggleCitta(c.id);
+      ultimoEventoClick = null;
+      return;
+    }
+    const f = nazioneSotto(click.x, click.y);
+    if (f) selezionaNazione(f);
+    else deseleziona();
+    ultimoEventoClick = null;
+  }
+
+  let downX = 0, downY = 0, downTime = 0, spostato = false;
+
+  canvas.addEventListener('pointerdown', e => {
+    downX = e.clientX; downY = e.clientY; downTime = Date.now(); spostato = false;
+    pointerGiù(e);
   });
+  canvas.addEventListener('pointermove', e => {
+    if (dita.has(e.pointerId) && Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 6) spostato = true;
+    pointerMovi(e);
+  });
+  canvas.addEventListener('pointerup', e => {
+    const eraTap = !spostato && dita.size <= 1 && (Date.now() - downTime) < 400;
+    pointerSu(e);
+    if (eraTap && dita.size === 0) {
+      const c = cittaSotto(e.clientX, e.clientY);
+      if (c) { toggleCitta(c.id); return; }
+      const f = nazioneSotto(e.clientX, e.clientY);
+      if (f) selezionaNazione(f);
+      else deseleziona();
+    }
+  });
+  canvas.addEventListener('pointercancel', pointerSu);
+  addEventListener('wheel', e => {
+    if (e.target !== canvas) return;
+    e.preventDefault();
+    const f = Math.pow(0.9, e.deltaY * 0.01);
+    vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, vista.alt * f));
+    aggiornaEtichetteZoometta();
+  }, { passive: false });
 
-  /* le etichette col nome compaiono solo quando si è abbastanza vicini
-     (zoom dentro la nazione); dal largo restano solo i punti colorati */
-  addEventListener('pointerdown', aggiornaEtichetteZoometta);
-  addEventListener('wheel', aggiornaEtichetteZoometta, { passive: true });
-  /* rileva anche la fine dell'inerzia (rotazione dolce) senza loop continuo */
-  setInterval(() => aggiornaEtichetteZoometta(), 600);
+  const MIN_ALT = 0.13;
+  const MAX_ALT = 2.7;
+  const SOGLIA_NOMI = 0.35;
+  const scaleFont = Math.max(10, Math.min(16, scalaAttuale() * 0.03));
+
+  /* ---------------- ciclo di rendering (rotazione + inerzia) ---------------- */
+  let ultimoFrame = performance.now();
+  let inMovimento = false;
+  let daRidisegnare = false;
+  function ciclo(ora) {
+    const dt = Math.min(50, ora - ultimoFrame);
+    ultimoFrame = ora;
+    inMovimento = false;
+    /* auto-rotazione quando fermo */
+    if (controlli.autoRotate && !trascinando && dita.size === 0 && !stato.selezionata) {
+      const vel = controlli.autoRotateSpeed * dt / 16;
+      if (Date.now() - poisIdle > 2500) {
+        vista.lon = ((vista.lon - vel * controlli.rotateSpeed * 1.5) % 360 + 360) % 360;
+        inMovimento = true;
+      }
+    }
+    /* inerzia dopo il trascinamento */
+    if (controlli.enableDamping && !trascinando && dita.size === 0 && (Math.abs(velX) > 0.001 || Math.abs(velY) > 0.001)) {
+      vista.lon = ((vista.lon - velX) % 360 + 360) % 360;
+      vista.lat = Math.max(-85, Math.min(85, vista.lat + velY));
+      velX *= 1 - controlli.dampingFactor;
+      velY *= 1 - controlli.dampingFactor;
+      inMovimento = true;
+    }
+    aggiornaEtichetteZoometta();
+    /* disegniamo solo se serve (evita consumo inutile quando il globo è fermo) */
+    if (inMovimento || trascinando || dita.size > 0 || daRidisegnare) {
+      disegna();
+      daRidisegnare = false;
+    }
+    requestAnimationFrame(ciclo);
+  }
+  requestAnimationFrame(ciclo);
+
+  /* ---------------- API pubbliche (compatibili con il vecchio globo) ---------------- */
+  return {
+    pointOfView(pov, ms) {
+      if (!pov) return Object.assign({}, vista);
+      const tgt = Object.assign({}, pov);
+      if (ms && ms > 0) {
+        const from = Object.assign({}, vista);
+        const t0 = performance.now();
+        const passo = (ora) => {
+          const t = Math.min(1, (ora - t0) / ms);
+          const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          vista.lon = from.lon + (tgt.lng - from.lon) * ease;
+          vista.lat = from.lat + (tgt.lat - from.lat) * ease;
+          vista.alt = from.alt + (tgt.altitude - from.alt) * ease;
+          daRidisegnare = true;
+          if (t < 1) requestAnimationFrame(passo);
+        };
+        requestAnimationFrame(passo);
+      } else {
+        vista.lon = tgt.lng != null ? tgt.lng : vista.lon;
+        vista.lat = tgt.lat != null ? tgt.lat : vista.lat;
+        vista.alt = tgt.altitude != null ? tgt.altitude : vista.alt;
+      }
+      setTimeout(() => disegna(), 0);
+      return this;
+    },
+    controls() {
+      return {
+        get autoRotate() { return controlli.autoRotate; },
+        set autoRotate(v) { controlli.autoRotate = v; },
+        enableDamping: true,
+        dampingFactor: controlli.dampingFactor,
+        rotateSpeed: controlli.rotateSpeed,
+        zoomSpeed: controlli.zoomSpeed,
+        minDistance: MIN_ALT,
+        maxDistance: MAX_ALT,
+        addEventListener: () => {},
+        on: () => this
+      };
+    },
+    polygonsData(d) { poligoni = d || []; disegna(); return this; },
+    pointsData(d) { punti = d || []; disegna(); return this; },
+    labelsData(d) { etichette = d || []; disegna(); return this; },
+    width(w) { if (w) { W = w; ridimensiona(); } return W; },
+    height(h) { if (h) { H = h; ridimensiona(); } return H; }
+  };
 }
 
+let globo2d = null;
 let ultimaSogliaZoom = null;
 
-/* legge l'altitude corrente (API garantita di globe.gl: pointOfView restituisce
-   {lat,lng,altitude}). Più l'altitude è bassa <-> più si è vicini (zoom in). */
 function liveAltitudine() {
-  try {
-    const pov = globo.pointOfView();
-    return (pov && typeof pov.altitude === 'number') ? pov.altitude : null;
-  } catch (e) { return null; }
+  if (!globo2d) return null;
+  const pov = globo2d.pointOfView();
+  return pov ? pov.alt : null;
 }
 
 function aggiornaEtichetteZoometta() {
   const alt = liveAltitudine();
   if (alt == null) return;
-  const zoomata = alt < 0.5;   // sotto: si è davvero vicini -> mostra i nomi
+  const zoomata = alt < 0.35;   // solo davvero vicini -> nomi
   if (zoomata !== ultimaSogliaZoom) {
     ultimaSogliaZoom = zoomata;
     aggiornaPunti();
@@ -342,7 +646,7 @@ function aggiornaEtichetteZoometta() {
 }
 
 function aggiornaPoligoni() {
-  globo.polygonsData(stato.features.slice());
+  if (globo2d) globo2d.polygonsData(stato.features.slice());
 }
 
 /* ---------------- selezione nazione ---------------- */
@@ -354,8 +658,11 @@ function selezionaNazione(f) {
   aggiornaPoligoni();
   renderPannello();
   const c = centroide(f);
-  globo.controls().autoRotate = false;
-  globo.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.7 }, 900);
+  if (globo2d) {
+    const ctl = globo2d.controls();
+    ctl.autoRotate = false;
+    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.7 }, 900);
+  }
 }
 
 function deseleziona() {
@@ -364,6 +671,7 @@ function deseleziona() {
   stato.selezionata = null;
   aggiornaPoligoni();
   renderPannello();
+  if (globo2d) globo2d.controls().autoRotate = true;   // riprende il giro lento
 }
 
 function toggleNazione() {
@@ -477,9 +785,9 @@ function etichetteVisibili() {
 }
 
 function aggiornaPunti() {
-  if (!globo) return;
-  globo.pointsData(puntiVisibili());
-  globo.labelsData(etichetteVisibili());
+  if (!globo2d) return;
+  globo2d.pointsData(puntiVisibili());
+  globo2d.labelsData(etichetteVisibili());
 }
 
 function toggleCitta(id) {
@@ -899,7 +1207,7 @@ async function avvia() {
       stato.featureByKey.set(f.key, f);
     });
 
-    initGlobo(feats);
+    globo2d = initGlobo(feats);
     aggiornaStatistiche();
     aggiornaRigaCasa();
 
@@ -915,8 +1223,8 @@ async function avvia() {
       const canvas = document.querySelector('#globeViz canvas');
       if (!canvas || canvas.width < 10 || canvas.height < 10) {
         mostraDiagnostico(
-          '⚠️ Il globo3D non è stato creato.\n' +
-          'Possibile problema WebGL. Prova ad aggiornare il browser.'
+          '⚠️ Il mappamondo non è stato creato.\n' +
+          'Prova ad aggiornare il browser.'
         );
       }
     }, 4000);
@@ -942,17 +1250,7 @@ window.addEventListener('error', e => {
 });
 
 (function verificaWebGL() {
-  let ok = false;
-  try {
-    const c = document.createElement('canvas');
-    ok = !!(window.WebGLRenderingContext &&
-      (c.getContext('webgl') || c.getContext('experimental-webgl')));
-  } catch (err) { ok = false; }
-  if (!ok) {
-    mostraDiagnostico(
-      "WebGL non disponibile: il mappamondo non può essere disegnato.\n" +
-      "Su Vivaldi / Chrome: Impostazioni → Sistema → attiva 'Usa l'accelerazione hardware quando disponibile' e riavvia il browser.");
-  }
+  /* il nuovo mappamondo 2D non richiede WebGL: nessun controllo necessario */
 })();
 
 /* ---------------- eventi interfaccia ---------------- */
