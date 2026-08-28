@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.1';
+const APP_VER = 'v1.9.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -364,14 +364,14 @@ function initGlobo(feats) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const casa = eCasa(c.id);
-      const r = casa ? 4.2 : (stato.visitateCitta.has(c.id) ? 3.0 : 1.6);
+      const r = casa ? 3.2 : (stato.visitateCitta.has(c.id) ? 2.3 : 1.1);
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
       ctx.fill();
       if (casa || stato.visitateCitta.has(c.id)) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 0.6;
         ctx.stroke();
       }
     }
@@ -547,7 +547,7 @@ function initGlobo(feats) {
   const MIN_ALT = 0.13;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.35;
-  const scaleFont = Math.max(10, Math.min(16, scalaAttuale() * 0.03));
+  const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
 
   /* ---------------- ciclo di rendering (rotazione + inerzia) ---------------- */
   let ultimoFrame = performance.now();
@@ -582,6 +582,7 @@ function initGlobo(feats) {
     requestAnimationFrame(ciclo);
   }
   requestAnimationFrame(ciclo);
+  disegna();   // disegna subito il mappamondo all'avvio
 
   /* ---------------- API pubbliche (compatibili con il vecchio globo) ---------------- */
   return {
