@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.12.0';
+const APP_VER = 'v1.13.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -489,7 +489,8 @@ function initGlobo(feats) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (distanzaDita > 0 && d > 0) {
         const f = d / distanzaDita;
-        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / f));
+        /* più sensibile: spingendo il pizzico entri più in fretta */
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.5)));
       }
     }
   }
@@ -558,7 +559,7 @@ function initGlobo(feats) {
     daRidisegnare = true;
   }, { passive: false });
 
-  const MIN_ALT = 0.13;
+  const MIN_ALT = 0.03;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.35;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
@@ -821,6 +822,12 @@ function puntiVisibili() {
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 800);
     lista.forEach(c => push(c));
+    /* in profondità può capitare che il centroide della nazione sia fuori
+       schermo: aggiungiamo comunque le città della nazione sotto il centro */
+    const centro = nazioneAlCentro();
+    if (centro) {
+      (stato.cittaPerNazione.get(centro) || []).forEach(c => push(c));
+    }
   }
 
   /* città dove vivo (sempre visibile): usiamo SEMPRE le coordinate salvate
@@ -1241,8 +1248,8 @@ async function autocompletaCasa() {
 
 /* ---------------- backup ---------------- */
 
-function esporta() {
-  const dati = {
+function costruisciBackup() {
+  return {
     app: 'countries-been-3d',
     versione: 1,
     esportato: new Date().toISOString(),
@@ -1251,7 +1258,10 @@ function esporta() {
     cacheCitta: stato.cacheCitta,
     casa: { nazione: stato.casaNazione, citta: stato.casaCitta }
   };
-  const testo = JSON.stringify(dati, null, 2);
+}
+
+function esporta() {
+  const testo = JSON.stringify(costruisciBackup(), null, 2);
   /* Nell'app Android (WebView) salviamo in una cartella a scelta del telefono */
   if (window.AndroidBridge && typeof window.AndroidBridge.salvaBackup === 'function') {
     try {
@@ -1267,6 +1277,18 @@ function esporta() {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   toast('⬇ Backup esportato');
+}
+
+function autoBackup() {
+  /* chiamato dall'app Android quando va in background / si chiude:
+     salva direttamente nella cartella scelta, senza selettori.
+     Nel browser normale non fa nulla (non può scrivere file in una cartella). */
+  if (window.AndroidBridge && typeof window.AndroidBridge.salvaAutomatico === 'function') {
+    try {
+      const contenuto = JSON.stringify(costruisciBackup(), null, 2);
+      window.AndroidBridge.salvaAutomatico(contenuto);
+    } catch (e) {}
+  }
 }
 
 function importa(file) {
@@ -1423,6 +1445,14 @@ document.getElementById('imp-casa').addEventListener('click', () => {
 document.getElementById('imp-export').addEventListener('click', () => {
   document.getElementById('modale-imp').classList.remove('aperta');
   esporta();
+});
+document.getElementById('imp-cartella').addEventListener('click', () => {
+  if (window.AndroidBridge && typeof window.AndroidBridge.scegliCartella === 'function') {
+    window.AndroidBridge.scegliCartella();
+    toast('📁 Apri la cartella dove salvare i backup');
+  } else {
+    toast('⚠️ Disponibile solo nell\'app Android aggiornata', 3500);
+  }
 });
 document.getElementById('imp-import').addEventListener('click', () => {
   document.getElementById('modale-imp').classList.remove('aperta');
