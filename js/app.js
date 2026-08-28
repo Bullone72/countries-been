@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.4';
+const APP_VER = 'v1.9.5';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -1044,7 +1044,7 @@ function chiudiCasa() {
   document.getElementById('modale-casa').classList.remove('aperta');
 }
 
-function renderCasa() {
+async function renderCasa() {
   const tit = document.getElementById('casa-titolo');
   const inp = document.getElementById('casa-ricerca');
   const lst = document.getElementById('casa-lista');
@@ -1081,6 +1081,7 @@ function renderCasa() {
     const tutte = (stato.cittaPerNazione.get(stato.casaNazione) || [])
       .slice().sort((a, b) => b.pop - a.pop);
     const filtrate = q ? tutte.filter(c => norma(c.nome).includes(q)) : tutte;
+    if (filtrate.length) html += '<div class="vuoto">Città dell\'elenco:</div>';
     filtrate.slice(0, MAX_RIGHE).forEach(c => {
       html += `<div class="riga-citta" data-citta="${c.id}">
         <span class="pallino"></span>
@@ -1088,9 +1089,51 @@ function renderCasa() {
         <span class="pop">${formattaPop(c.pop)}</span>
       </div>`;
     });
-    if (!filtrate.length) html += '<div class="vuoto">Nessuna città trovata</div>';
+    if (!filtrate.length && !q) html += '<div class="vuoto">Nessuna città in elenco</div>';
+
+    /* se l'utente ha scritto un nome, cerchiamo anche "su internet" (Open-Meteo):
+       così trova anche città piccole come Terni che non sono nell'elenco locale */
+    if (q) {
+      const f = stato.featureByKey.get(stato.casaNazione);
+      const a2 = (f && f.meta && f.meta.a2) || '';
+      html += `<div class="vuoto">🔎 Cerca "${esc(casaQuery)}" online…</div>`;
+      lst.innerHTML = html;
+      const lista = await cercaOnline(casaQuery, a2);
+      if (document.getElementById('casa-ricerca').value !== casaQuery) return;
+      renderCasaOnline(lista);
+      return;
+    }
   }
   lst.innerHTML = html;
+}
+
+function renderCasaOnline(lista) {
+  const lst = document.getElementById('casa-lista');
+  if (!lista || !lista.length) {
+    lst.innerHTML = '<div class="vuoto">Nessuna città trovata online. Riprova a scriverla meglio.</div>';
+    return;
+  }
+  let html = '<div class="vuoto">🌐 Risultati online (più precisi):</div>';
+  lista.slice(0, 8).forEach(r => {
+    html += `<div class="riga-citta" data-citta-ext="${encodeURIComponent(JSON.stringify({ nome: r.name, lat: r.lat, lon: r.lon }))}">
+      <span class="pallino" style="background:#34d399"></span>
+      <span class="info"><span class="nome">${esc(r.name)}</span></span>
+      <span class="pop">${r.rego || ''}</span>
+    </div>`;
+  });
+  lst.innerHTML = html;
+}
+
+async function cercaOnline(q, a2) {
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=it&format=json`;
+    const ris = await fetch(url);
+    if (!ris.ok) return null;
+    const dati = await ris.json();
+    const risu = (dati && dati.results) || [];
+    const filtri = a2 ? risu.filter(r => (r.country_code || r.countryCode) === a2) : risu;
+    return filtri.length ? filtri : risu;
+  } catch (e) { return null; }
 }
 
 /* ---------------- backup ---------------- */
@@ -1323,6 +1366,27 @@ document.getElementById('casa-lista').addEventListener('click', e => {
     aggiornaRigaCasa();
     toast('🏠 Casa impostata!');
     chiudiCasa();
+    return;
+  }
+  const rigaExt = e.target.closest('[data-citta-ext]');
+  if (rigaExt) {
+    try {
+      const r = JSON.parse(decodeURIComponent(rigaExt.dataset.cittaExt));
+      const id = hashId(r.nome, r.lat, r.lon);
+      const c = { id, nome: r.nome, lat: r.lat, lon: r.lon, pop: 0, key: stato.casaNazione };
+      stato.cittaById.set(id, c);
+      if (stato.casaNazione && stato.cittaPerNazione.has(stato.casaNazione)) {
+        stato.cittaPerNazione.get(stato.casaNazione).push(c);
+      }
+      stato.casaCitta = { id: c.id, nome: c.nome, lat: c.lat, lon: c.lon };
+      salvaCasa();
+      salvaCache();
+      aggiornaPunti();
+      aggiornaRigaCasa();
+      toast('🏠 Casa impostata!');
+      chiudiCasa();
+    } catch (err) { toast('⚠️ Impossibile impostare la città'); }
+    return;
   }
 });
 
