@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.11.1';
+const APP_VER = 'v1.12.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -635,7 +635,24 @@ function initGlobo(feats) {
     labelsData(d) { etichette = d || []; disegna(); return this; },
     width(w) { if (w) { W = w; ridimensiona(); } return W; },
     height(h) { if (h) { H = h; ridimensiona(); } return H; },
-    debugCounts() { return { punti: punti.length, etichette: etichette.length }; }
+    debugCounts() { return { punti: punti.length, etichette: etichette.length }; },
+    /* città delle nazioni visibili a schermo (per lo zoom manuale):
+       rivela anche le città non ancora salvate, così ci si ricorda e si tocca */
+    cittaPerZoom() {
+      const scelte = [];
+      let nazioni = 0;
+      for (const f of poligoni) {
+        const c = centroide(f);
+        const p = proj([c.lng, c.lat]);
+        if (!p || isNaN(p[0]) || isNaN(p[1])) continue;
+        if (p[0] >= -40 && p[0] <= W + 40 && p[1] >= -40 && p[1] <= H + 40) {
+          const l = stato.cittaPerNazione.get(f.key) || [];
+          scelte.push(...l);
+          if (++nazioni >= 10) break;
+        }
+      }
+      return scelte;
+    }
   };
 }
 
@@ -788,26 +805,21 @@ function puntiVisibili() {
   for (const id of stato.visitateCitta) {
     push(stato.cittaById.get(id) || stato.cacheCitta[id]);
   }
-  /* città della nazione: se una nazione è selezionata mostriamo TUTTE le sue
-     città (toccabili subito). Altrimenti, quando si è abbastanza "dentro" con
-     lo zoom, mostriamo le città della nazione visibile al centro. */
-  let naziDaMostrare = null;
+  /* città della nazione. Se una nazione è selezionata mostriamo TUTTE le sue
+     città (toccabili subito). Senza selezione, quando si è abbastanza "dentro"
+     con lo zoom mostriamo le città di TUTTE le nazioni visibili a schermo:
+     così si vedono anche quelle non ancora aggiunte e ci si può ricordare e
+     toccare per selezionarle. */
   if (stato.selezionata) {
-    naziDaMostrare = stato.selezionata;           // sempre tutte
-  } else if (ultimaSogliaCitta) {
-    naziDaMostrare = nazioneAlCentro();            // zoom: nazione al centro
-  }
-  if (naziDaMostrare) {
-    let lista = (stato.cittaPerNazione.get(naziDaMostrare) || []).slice()
-      .sort((a, b) => (b.pop || 0) - (a.pop || 0));
-    /* quando una nazione è selezionata: tutte le città. Quando siamo dentro
-       per zoom (senza selezione): solo se abbastanza vicini */
-    const tutte = stato.selezionata === naziDaMostrare || ultimaSogliaCitta;
-    if (tutte) {
-      lista = lista.slice(0, 500);
-    } else {
-      lista = lista.filter(c => c.pop >= 200000);
-    }
+    const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+      .slice(0, 500);
+    lista.forEach(c => push(c));
+  } else if (ultimaSogliaCitta && globo2d) {
+    const lista = globo2d.cittaPerZoom()
+      .filter(Boolean)
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+      .slice(0, 800);
     lista.forEach(c => push(c));
   }
 
