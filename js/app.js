@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.11.0';
+const APP_VER = 'v1.11.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -1196,6 +1196,37 @@ async function cercaOnline(q, a2) {
   } catch (e) { return null; }
 }
 
+/* Autocorrezione: se la casa salvata in passato manca delle coordinate
+   (vecchi salvataggi), le recuperiamo da cache/database o dal geocoder
+   e risalviamo, così il puntino e il nome riappaiono. */
+async function autocompletaCasa() {
+  const casa = stato.casaCitta;
+  if (!casa) return;
+  if (isFinite(casa.lat) && isFinite(casa.lon)) return;
+  /* 1) prova da cache o dalle città caricate */
+  let c = stato.cittaById.get(casa.id) || stato.cacheCitta[casa.id];
+  if (!c && casa.nome) {
+    const perNome = [...stato.cittaById.values()].find(x => x.nome === casa.nome);
+    c = perNome || null;
+  }
+  if (c && isFinite(c.lat) && isFinite(c.lon)) {
+    stato.casaCitta.lat = c.lat;
+    stato.casaCitta.lon = c.lon;
+  } else if (casa.nome) {
+    /* 2) ultima spiaggia: geocodifica online per nome */
+    const ris = await cercaOnline(casa.nome, stato.casaNazione);
+    if (ris && ris.length && isFinite(ris[0].latitude) && isFinite(ris[0].longitude)) {
+      stato.casaCitta.lat = ris[0].latitude;
+      stato.casaCitta.lon = ris[0].longitude;
+    }
+  }
+  if (isFinite(stato.casaCitta.lat) && isFinite(stato.casaCitta.lon)) {
+    salvaCasa();
+    aggiornaPunti();
+    aggiornaRigaCasa();
+  }
+}
+
 /* ---------------- backup ---------------- */
 
 function esporta() {
@@ -1314,6 +1345,7 @@ async function avvia() {
 
     mostraCaricamento('Caricamento città…');
     await caricaCitta();
+    await autocompletaCasa();
 
     document.getElementById('caricamento').classList.add('nascosto');
     setTimeout(() => document.getElementById('caricamento').remove(), 600);
