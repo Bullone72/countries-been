@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.10.0';
+const APP_VER = 'v1.10.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -1303,7 +1303,11 @@ async function avvia() {
 
     document.getElementById('caricamento').classList.add('nascosto');
     setTimeout(() => document.getElementById('caricamento').remove(), 600);
-    toast('Tocca una nazione per iniziare 👆', 3200);
+    toast('✅ Aggiornata alla versione ' + APP_VER + ' 👆 Tocca una nazione per iniziare', 4500);
+    /* versionino visibile a lungo: se non vedi il numero v1.10.0, è un problema di cache */
+    setTimeout(() => {
+      if (stato.casaCitta) toast('🏠 Casa: ' + stato.casaCitta.nome + ' (' + APP_VER + ')', 2500);
+    }, 5500);
 
     /* verifica dopo 4 secondi che il canvas esista */
     setTimeout(() => {

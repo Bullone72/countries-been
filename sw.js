@@ -6,7 +6,7 @@
    scaricarle di nuovo. Chiudere e riaprire = aggiornata.
    ============================================================ */
 
-const VERSIONE = 'v1.10.0';
+const VERSIONE = 'v1.10.1';
 
 /* librerie esterne pesanti: messe in cache (non ri-scaricate ad ogni avvio) */
 const STATICHE = [
