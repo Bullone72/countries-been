@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.0';
+const APP_VER = 'v1.9.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -523,11 +523,16 @@ function initGlobo(feats) {
     const eraTap = !spostato && dita.size <= 1 && (Date.now() - downTime) < 400;
     pointerSu(e);
     if (eraTap && dita.size === 0) {
-      const c = cittaSotto(e.clientX, e.clientY);
-      if (c) { toggleCitta(c.id); return; }
-      const f = nazioneSotto(e.clientX, e.clientY);
-      if (f) selezionaNazione(f);
-      else deseleziona();
+      /* solo se tocco dentro il "disco" del globo */
+      const raggio = scalaAttuale();
+      const dx = e.clientX - W / 2, dy = e.clientY - H / 2;
+      if (Math.hypot(dx, dy) <= raggio) {
+        const c = cittaSotto(e.clientX, e.clientY);
+        if (c) { toggleCitta(c.id); return; }
+        const f = nazioneSotto(e.clientX, e.clientY);
+        if (f) selezionaNazione(f);
+        else deseleziona();
+      }
     }
   });
   canvas.addEventListener('pointercancel', pointerSu);
