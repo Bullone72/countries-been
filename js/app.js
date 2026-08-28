@@ -1,12 +1,12 @@
 'use strict';
 
-const APP_VER = 'v1.9.8';
+const APP_VER = 'v1.9.9';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
    ============================================================ */
 
-const URL_NAZIONI = 'https://unpkg.com/world-atlas@2.0.2/countries-50m.json';
+const URL_NAZIONI = 'https://unpkg.com/world-atlas@2.0.2/countries-110m.json';
 const URL_META    = 'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json';
 const URL_CITTA   = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_populated_places_simple.geojson';
 const URL_TEXTURE = 'https://unpkg.com/three-globe/example/img/earth-night.jpg';
@@ -679,7 +679,7 @@ function selezionaNazione(f) {
   if (globo2d) {
     const ctl = globo2d.controls();
     ctl.autoRotate = false;
-    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.0 }, 900);
+    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 0.6 }, 900);
   }
 }
 
@@ -755,6 +755,19 @@ function costruisciCittaDa(gj) {
   else aggiornaPunti();
 }
 
+/* restituisce la nazione che sta al centro della vista corrente */
+function nazioneAlCentro() {
+  const pov = globo2d ? globo2d.pointOfView() : null;
+  if (!pov) return null;
+  const pt = [pov.lon, pov.lat];
+  for (const f of stato.features) {
+    if (f && f.geometry && typeof d3 !== 'undefined' && d3.geoContains && d3.geoContains(f, pt)) {
+      return f.key;
+    }
+  }
+  return null;
+}
+
 function puntiVisibili() {
   const mappa = new Map();
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
@@ -762,10 +775,17 @@ function puntiVisibili() {
   for (const id of stato.visitateCitta) {
     push(stato.cittaById.get(id) || stato.cacheCitta[id]);
   }
-  /* città della nazione selezionata: principali sempre; quando si entra abbastanza
-     "dentro" la nazione mostriamo TUTTE le sue città (toccabili appena compaiono) */
+  /* città della nazione: quando siamo ABBASTANZA "dentro" (zoom ravvicinato)
+     mostriamo TUTTE le città della nazione visibile al centro (toccabili subito).
+     Vale sia se una nazione è selezionata, sia semplicemente zoomando in una zona. */
+  let naziDaMostrare = null;
   if (stato.selezionata) {
-    let lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
+    naziDaMostrare = stato.selezionata;
+  } else if (ultimaSogliaCitta) {
+    naziDaMostrare = nazioneAlCentro();
+  }
+  if (naziDaMostrare) {
+    let lista = (stato.cittaPerNazione.get(naziDaMostrare) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0));
     if (ultimaSogliaCitta) {
       /* dentro la nazione: tutte le città (con un tetto per restare fluido)
@@ -777,12 +797,11 @@ function puntiVisibili() {
     }
     lista.forEach(c => push(c));
   }
-  /* città dove vivo (sempre visibile) */
+
+  /* città dove vivo (sempre visibile): usiamo SEMPRE le coordinate salvate
+     in stato.casaCitta (quelle "reali" scelte online), così il puntino va giusto */
   if (stato.casaCitta) {
-    const c = stato.cittaById.get(stato.casaCitta.id) ||
-              stato.cacheCitta[stato.casaCitta.id] ||
-              { id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon };
-    push(c);
+    push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
   }
   return Array.from(mappa.values());
 }
@@ -795,11 +814,15 @@ function etichetteVisibili() {
   const visite = [...stato.visitateCitta].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
   for (const c of visite) {
-    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: eCasa(c.id) });
+    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id) });
   }
-  if (stato.casaCitta && !stato.visitateCitta.has(stato.casaCitta.id)) {
-    const c = stato.cittaById.get(stato.casaCitta.id) || stato.cacheCitta[stato.casaCitta.id];
-    if (c) elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: true });
+  /* casa: sempre presente, con le coordinate salvate (così compare anche il nome) */
+  if (stato.casaCitta) {
+    const gia = visite.some(c => c.id === stato.casaCitta.id);
+    if (!gia) {
+      const casa = { id: stato.casaCitta.id };
+      elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true });
+    }
   }
   return elenco;
 }

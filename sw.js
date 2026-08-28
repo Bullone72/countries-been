@@ -6,14 +6,14 @@
    scaricarle di nuovo. Chiudere e riaprire = aggiornata.
    ============================================================ */
 
-const VERSIONE = 'v1.9.8';
+const VERSIONE = 'v1.9.9';
 
 /* librerie esterne pesanti: messe in cache (non ri-scaricate ad ogni avvio) */
 const STATICHE = [
   'https://unpkg.com/topojson-client@3/dist/topojson-client.min.js',
   'https://unpkg.com/d3-array@3/dist/d3-array.min.js',
   'https://unpkg.com/d3-geo@3/dist/d3-geo.min.js',
-  'https://unpkg.com/world-atlas@2.0.2/countries-50m.json',
+  'https://unpkg.com/world-atlas@2.0.2/countries-110m.json',
   'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json'
 ];
 
