@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.3';
+const APP_VER = 'v1.9.4';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -253,8 +253,9 @@ function initGlobo(feats) {
   stato.features = feats;
 
   /* ============ mappamondo 2D su canvas (velocissimo, niente WebGL)
-     Stessa sensazione del 3D: trascina per ruotare, inerzia, auto-rotazione,
-     zoom, click sulle nazioni e sulle città. Ma si apre in un attimo.
+     Stessa sensazione del 3D: trascina per ruotare, inerzia, zoom,
+     click sulle nazioni e sulle città. Ma si apre in un attimo.
+     (Niente rotazione automatica: si muove solo se lo muovi tu.)
      ============ */
   const el = document.getElementById('globeViz');
   el.innerHTML = '';
@@ -278,10 +279,10 @@ function initGlobo(feats) {
   /* Stato di vista: lon/lat del centro + fattore di zoom */
   const vista = { lon: 12, lat: 25, alt: 2.7 };
   const controlli = {
-    autoRotate: true,
-    autoRotateSpeed: 0.15,
+    autoRotate: false,           // il globo si muove SOLO se lo muovi tu
+    autoRotateSpeed: 0,
     enableDamping: true,
-    dampingFactor: 0.12,
+    dampingFactor: 0.2,
     rotateSpeed: 0.55,
     zoomSpeed: 0.6
   };
@@ -293,7 +294,9 @@ function initGlobo(feats) {
   /* projection ortografica (2D): ruota il "globo" piatto come quello 3D */
   const proj = d3.geoOrthographic();
   proj.clipAngle(90);
-  const path = d3.geoPath(proj);
+  /* IMPORTANTE: passare il contesto canvas, altrimenti geoPath genera una
+     stringa SVG invece di disegnare sul canvas */
+  const path = d3.geoPath(proj, ctx);
 
   function scalaAttuale() {
     const base = Math.min(W, H) / 2;
@@ -411,7 +414,6 @@ function initGlobo(feats) {
   let ultimoX = 0, ultimoY = 0;
   let velX = 0, velY = 0;
   let lastTime = 0;
-  let poisIdle = Date.now();
   let dita = new Map(); // touch: pointerId -> {x,y}
   let distanzaDita = 0;
   let altStartZoom = vista.alt;
@@ -443,8 +445,7 @@ function initGlobo(feats) {
 
   function pointerGiù(e) {
     dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    poisIdle = Date.now();
-    controlli.autoRotate = false;
+    velX = 0; velY = 0;
     if (dita.size === 1) {
       trascinando = true;
       ultimoX = e.clientX; ultimoY = e.clientY;
@@ -557,15 +558,7 @@ function initGlobo(feats) {
     const dt = Math.min(50, ora - ultimoFrame);
     ultimoFrame = ora;
     inMovimento = false;
-    /* auto-rotazione quando fermo */
-    if (controlli.autoRotate && !trascinando && dita.size === 0 && !stato.selezionata) {
-      const vel = controlli.autoRotateSpeed * dt / 16;
-      if (Date.now() - poisIdle > 2500) {
-        vista.lon = ((vista.lon - vel * controlli.rotateSpeed * 1.5) % 360 + 360) % 360;
-        inMovimento = true;
-      }
-    }
-    /* inerzia dopo il trascinamento */
+    /* inerzia dopo il trascinamento: si ferma da solo */
     if (controlli.enableDamping && !trascinando && dita.size === 0 && (Math.abs(velX) > 0.001 || Math.abs(velY) > 0.001)) {
       vista.lon = ((vista.lon - velX) % 360 + 360) % 360;
       vista.lat = Math.max(-85, Math.min(85, vista.lat + velY));
@@ -677,7 +670,6 @@ function deseleziona() {
   stato.selezionata = null;
   aggiornaPoligoni();
   renderPannello();
-  if (globo2d) globo2d.controls().autoRotate = true;   // riprende il giro lento
 }
 
 function toggleNazione() {
