@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.10.1';
+const APP_VER = 'v1.11.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -547,8 +547,13 @@ function initGlobo(feats) {
   addEventListener('wheel', e => {
     if (e.target !== canvas) return;
     e.preventDefault();
-    /* sensibilità dello zoom aumentata: bastano poche rotelline per entrare */
-    const f = Math.pow(0.82, e.deltaY * 0.02);
+    /* normalizza il delta in base alla modalità (pixel / righe / pagine):
+       molti mouse Windows riportano "righe" (deltaMode=1) con delta piccoli,
+       che senza questa correzione rendevano lo zoom quasi nullo */
+    let delta = e.deltaY;
+    if (e.deltaMode === 1) delta *= 16;      // linee -> ~pixel
+    else if (e.deltaMode === 2) delta *= 120; // pagine -> grande
+    const f = Math.pow(0.82, (delta || 0) * 0.02);
     vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, vista.alt * f));
     daRidisegnare = true;
   }, { passive: false });
@@ -629,7 +634,8 @@ function initGlobo(feats) {
     pointsData(d) { punti = d || []; disegna(); return this; },
     labelsData(d) { etichette = d || []; disegna(); return this; },
     width(w) { if (w) { W = w; ridimensiona(); } return W; },
-    height(h) { if (h) { H = h; ridimensiona(); } return H; }
+    height(h) { if (h) { H = h; ridimensiona(); } return H; },
+    debugCounts() { return { punti: punti.length, etichette: etichette.length }; }
   };
 }
 
@@ -726,9 +732,15 @@ async function caricaCitta() {
       gj = await fetchJson(URL_CITTA);
       try { cache.put(URL_CITTA, new Response(JSON.stringify(gj), { headers: { 'Content-Type': 'application/json' } })); } catch (e) {}
     }
-    costruisciCittaDa(gj);
+    /* costruiamo le città; anche se il dataset è stranamente vuoto,
+       non deve bloccare il disegno dei punti (visitate + casa) */
+    try { costruisciCittaDa(gj); } catch (e) {}
+    aggiornaPunti();
   } catch (e) {
     if (!stato.pronte) toast('⚠️ Impossibile scaricare le città (serve internet la prima volta)', 4000);
+    /* anche se il caricamento delle città fallisce, mostriamo comunque
+       le città visitate e la casa già salvate sul dispositivo */
+    aggiornaPunti();
   }
 }
 
@@ -830,8 +842,10 @@ function etichetteVisibili() {
 
 function aggiornaPunti() {
   if (!globo2d) return;
-  globo2d.pointsData(puntiVisibili());
-  globo2d.labelsData(etichetteVisibili());
+  try {
+    globo2d.pointsData(puntiVisibili());
+    globo2d.labelsData(etichetteVisibili());
+  } catch (e) {}
 }
 
 function toggleCitta(id) {
@@ -1304,10 +1318,14 @@ async function avvia() {
     document.getElementById('caricamento').classList.add('nascosto');
     setTimeout(() => document.getElementById('caricamento').remove(), 600);
     toast('✅ Aggiornata alla versione ' + APP_VER + ' 👆 Tocca una nazione per iniziare', 4500);
-    /* versionino visibile a lungo: se non vedi il numero v1.10.0, è un problema di cache */
+    /* diagnostic: riporta lo stato reale dell'app così possiamo capire cosa manca */
     setTimeout(() => {
-      if (stato.casaCitta) toast('🏠 Casa: ' + stato.casaCitta.nome + ' (' + APP_VER + ')', 2500);
-    }, 5500);
+      const c = globo2d ? globo2d.debugCounts() : { punti: -1, etichette: -1 };
+      const casa = stato.casaCitta ? stato.casaCitta.nome + ' (' + stato.casaCitta.lat + ',' + stato.casaCitta.lon + ')' : 'nessuna';
+      const sel = stato.selezionata || 'nessuna';
+      const alt = liveAltitudine() != null ? liveAltitudine().toFixed(2) : '?';
+      toast('📊 punti=' + c.punti + ' | casa: ' + casa + ' | sel: ' + sel + ' | alt=' + alt + ' | ver=' + APP_VER, 5500);
+    }, 2000);
 
     /* verifica dopo 4 secondi che il canvas esista */
     setTimeout(() => {
