@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.9.7';
+const APP_VER = 'v1.9.8';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -265,9 +265,12 @@ function initGlobo(feats) {
   const ctx = canvas.getContext('2d');
 
   let W = innerWidth, H = innerHeight;
-  /* su schermi molto grandi (PC con risoluzione alta) dimezziamo la risoluzione
-     interna del canvas: il globo resta nitido ma gira molto più fluido */
-  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, (W * H > 1500000 ? 1.5 : 2)));
+  /* su schermi grandi (PC ad alta risoluzione) riduciamo la risoluzione interna
+     del canvas: il globo resta nitido ma gira molto più fluido */
+  const dpr = Math.max(1,
+    W * H > 3000000 ? 1.25 :
+    W * H > 1200000 ? 1.5 :
+    Math.min(window.devicePixelRatio || 1, 2));
   function ridimensiona() {
     W = innerWidth; H = innerHeight;
     canvas.width = W * dpr;
@@ -652,7 +655,7 @@ function aggiornaEtichetteZoometta() {
     aggiornaPunti(NG_CITTA);
   }
   /* tutte le città della nazione: da una distanza media */
-  const dentro = alt < 0.9;
+  const dentro = alt < 1.1;
   if (dentro !== ultimaSogliaCitta) {
     ultimaSogliaCitta = dentro;
     aggiornaPunti(NG_CITTA);
@@ -670,12 +673,13 @@ function selezionaNazione(f) {
   stato.selezionata = f.key;
   stato.query = '';
   aggiornaPoligoni();
+  aggiornaPunti();   // aggiorna subito le città della nazione appena scelta
   renderPannello();
   const c = centroide(f);
   if (globo2d) {
     const ctl = globo2d.controls();
     ctl.autoRotate = false;
-    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.4 }, 900);
+    globo2d.pointOfView({ lat: c.lat, lng: c.lng, altitude: 1.0 }, 900);
   }
 }
 
@@ -684,6 +688,7 @@ function deseleziona() {
   if (Date.now() - (stato.tsClick || 0) < 400) return; // ignora il click del globo subito dopo la selezione
   stato.selezionata = null;
   aggiornaPoligoni();
+  aggiornaPunti();
   renderPannello();
 }
 
