@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.1';
+const APP_VER = 'v1.13.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -667,6 +667,15 @@ function liveAltitudine() {
   return pov ? pov.alt : null;
 }
 
+/* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
+   da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
+   scende e "emergono" sempre più città, come nell'app Country Beans */
+function sogliaPopDaAlt(alt) {
+  if (alt == null) return 6000000;
+  const al = Math.max(0.03, alt);
+  return Math.round(6000000 * (al / 2.2));
+}
+
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
 const NG_CITTA = '__citta__';
 
@@ -679,10 +688,12 @@ function aggiornaEtichetteZoometta() {
     ultimaSogliaZoom = zoomata;
     aggiornaPunti(NG_CITTA);
   }
-  /* tutte le città della nazione: da una distanza media */
-  const dentro = alt < 1.1;
-  if (dentro !== ultimaSogliaCitta) {
-    ultimaSogliaCitta = dentro;
+  /* comparsa progressiva con lo zoom: ogni volta che la soglia di
+     popolazione cambia (cioè mentre ci si avvicina o allontana) le città
+     vengono ricalcolate, così "emergono" via via, come nell'app Country Beans */
+  const nuovo = sogliaPopDaAlt(alt);
+  if (nuovo !== ultimaSogliaCitta) {
+    ultimaSogliaCitta = nuovo;
     aggiornaPunti(NG_CITTA);
   }
 }
@@ -812,13 +823,20 @@ function puntiVisibili() {
      così si vedono anche quelle non ancora aggiunte e ci si può ricordare e
      toccare per selezionarle. */
   if (stato.selezionata) {
+    /* nazione scelta: tutte le sue città (toccabili subito) */
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 500);
     lista.forEach(c => push(c));
-  } else if (ultimaSogliaCitta && globo2d) {
+  } else if (globo2d) {
+    /* Come nell'app Country Beans: le città compaiono via via con lo zoom.
+       Da lontano solo le più grandi; avvicinandosi la soglia di popolazione
+       scende e "emergono" sempre più città, anche non ancora aggiunte, così
+       ci si ricorda e si toccano per selezionarle. */
+    const alt = liveAltitudine();
+    const soglia = sogliaPopDaAlt(alt);
     const lista = globo2d.cittaPerZoom()
-      .filter(Boolean)
+      .filter(c => c && (c.pop || 0) >= soglia)
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 800);
     lista.forEach(c => push(c));
@@ -826,7 +844,9 @@ function puntiVisibili() {
        schermo: aggiungiamo comunque le città della nazione sotto il centro */
     const centro = nazioneAlCentro();
     if (centro) {
-      (stato.cittaPerNazione.get(centro) || []).forEach(c => push(c));
+      (stato.cittaPerNazione.get(centro) || [])
+        .filter(c => (c.pop || 0) >= soglia)
+        .forEach(c => push(c));
     }
   }
 
