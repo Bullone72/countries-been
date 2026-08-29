@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.0';
+const APP_VER = 'v1.13.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -374,7 +374,7 @@ function initGlobo(feats) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const casa = eCasa(c.id);
-      const r = casa ? 2.6 : (stato.visitateCitta.has(c.id) ? 1.8 : 0.9);
+      const r = casa ? 2.2 : (stato.visitateCitta.has(c.id) ? 1.3 : 0.7);
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
@@ -646,7 +646,7 @@ function initGlobo(feats) {
         const c = centroide(f);
         const p = proj([c.lng, c.lat]);
         if (!p || isNaN(p[0]) || isNaN(p[1])) continue;
-        if (p[0] >= -40 && p[0] <= W + 40 && p[1] >= -40 && p[1] <= H + 40) {
+        if (p[0] >= -W / 2 && p[0] <= W * 1.5 && p[1] >= -H / 2 && p[1] <= H * 1.5) {
           const l = stato.cittaPerNazione.get(f.key) || [];
           scelte.push(...l);
           if (++nazioni >= 10) break;
