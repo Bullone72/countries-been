@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.4';
+const APP_VER = 'v1.13.5';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -483,7 +483,7 @@ function initGlobo(feats) {
       /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
       const gradiPerPx = 360 / (scalaAttuale() * Math.PI * 2);
       vista.lon -= dx * gradiPerPx * controlli.rotateSpeed * 3;
-      vista.lat = Math.max(-85, Math.min(85, vista.lat + dy * gradiPerPx * controlli.rotateSpeed * 3));
+      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * gradiPerPx * controlli.rotateSpeed * 3));
       /* normalizza lon */
       vista.lon = ((vista.lon % 360) + 360) % 360;
       /* inerzia */
@@ -584,7 +584,7 @@ function initGlobo(feats) {
     /* inerzia dopo il trascinamento: si ferma da solo */
     if (controlli.enableDamping && !trascinando && dita.size === 0 && (Math.abs(velX) > 0.001 || Math.abs(velY) > 0.001)) {
       vista.lon = ((vista.lon - velX) % 360 + 360) % 360;
-      vista.lat = Math.max(-85, Math.min(85, vista.lat + velY));
+      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + velY));
       velX *= 1 - controlli.dampingFactor;
       velY *= 1 - controlli.dampingFactor;
       inMovimento = true;
