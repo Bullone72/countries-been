@@ -6,7 +6,7 @@
    scaricarle di nuovo. Chiudere e riaprire = aggiornata.
    ============================================================ */
 
-const VERSIONE = 'v1.13.5';
+const VERSIONE = 'v1.13.6';
 
 /* librerie esterne pesanti: messe in cache (non ri-scaricate ad ogni avvio) */
 const STATICHE = [
@@ -14,7 +14,8 @@ const STATICHE = [
   'https://unpkg.com/d3-array@3/dist/d3-array.min.js',
   'https://unpkg.com/d3-geo@3/dist/d3-geo.min.js',
   'https://unpkg.com/world-atlas@2.0.2/countries-110m.json',
-  'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json'
+  'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json',
+  './data/citta.geojson'
 ];
 
 self.addEventListener('install', e => {

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.5';
+const APP_VER = 'v1.13.6';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -8,7 +8,7 @@ const APP_VER = 'v1.13.5';
 
 const URL_NAZIONI = 'https://unpkg.com/world-atlas@2.0.2/countries-110m.json';
 const URL_META    = 'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json';
-const URL_CITTA   = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_populated_places_simple.geojson';
+const URL_CITTA   = 'data/citta.geojson';
 const URL_TEXTURE = 'https://unpkg.com/three-globe/example/img/earth-night.jpg';
 
 const LS_NAZIONI = 'cb3_nazioni';
