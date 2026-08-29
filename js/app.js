@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.7';
+const APP_VER = 'v1.13.8';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -24,7 +24,7 @@ const COL = {
   nazioneCasa: 'rgba(167,139,250,0.95)',  // viola: dove vivo
   nazioneCasaSel: 'rgba(196,181,253,0.98)',
   cittaVista: '#ff2d2d',                  // rosso vivo: città visitata
-  cittaNo: '#7fd8ff',                     // azzurro chiaro: città non ancora visitata (ben visibile)
+  cittaNo: '#000000',                     // nero: città non ancora visitata
   cittaCasa: '#c084fc'                    // viola vivo: città dove vivo
 };
 
@@ -383,16 +383,17 @@ function initGlobo(feats) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const casa = eCasa(c.id);
-      const r = casa ? 2.6 : (stato.visitateCitta.has(c.id) ? 1.5 : 1.1);
+      const visitata = stato.visitateCitta.has(c.id);
+      const r = casa ? 2.6 : (visitata ? 1.5 : 1.2);
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
       ctx.fill();
-      if (casa || stato.visitateCitta.has(c.id)) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-        ctx.lineWidth = 0.6;
-        ctx.stroke();
-      }
+      /* bordo chiaro su TUTTI i punti: rende visibili anche i pallini neri
+         (non visitati) sullo sfondo scuro dell'oceano */
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = visitata || casa ? 1.0 : 0.8;
+      ctx.stroke();
     }
   }
 
@@ -879,17 +880,30 @@ function etichetteVisibili() {
   const alt = liveAltitudine();
   if (alt == null || alt >= 0.5) return [];   // non ancora abbastanza vicini: niente nomi
   const elenco = [];
-  const visite = [...stato.visitateCitta].map(id =>
+  const viste = new Set(stato.visitateCitta);
+  const visite = [...viste].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
   for (const c of visite) {
     elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id) });
   }
   /* casa: sempre presente, con le coordinate salvate (così compare anche il nome) */
   if (stato.casaCitta) {
-    const gia = visite.some(c => c.id === stato.casaCitta.id);
-    if (!gia) {
+    if (!viste.has(stato.casaCitta.id)) {
       const casa = { id: stato.casaCitta.id };
       elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true });
+    }
+  }
+  /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
+     mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
+     Country Beans) — limitiamo il numero per non riempire lo schermo */
+  if (globo2d && alt < 0.30) {
+    const attuali = globo2d.currentPoints() || [];
+    const extra = attuali
+      .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+      .slice(0, 40);
+    for (const c of extra) {
+      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false });
     }
   }
   return elenco;
