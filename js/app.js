@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.6';
+const APP_VER = 'v1.13.7';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -24,7 +24,7 @@ const COL = {
   nazioneCasa: 'rgba(167,139,250,0.95)',  // viola: dove vivo
   nazioneCasaSel: 'rgba(196,181,253,0.98)',
   cittaVista: '#ff2d2d',                  // rosso vivo: città visitata
-  cittaNo: 'rgba(255,255,255,0.18)',      // bianco quasi invisibile
+  cittaNo: '#7fd8ff',                     // azzurro chiaro: città non ancora visitata (ben visibile)
   cittaCasa: '#c084fc'                    // viola vivo: città dove vivo
 };
 
@@ -383,7 +383,7 @@ function initGlobo(feats) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const casa = eCasa(c.id);
-      const r = casa ? 2.2 : (stato.visitateCitta.has(c.id) ? 1.3 : 0.7);
+      const r = casa ? 2.6 : (stato.visitateCitta.has(c.id) ? 1.5 : 1.1);
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
