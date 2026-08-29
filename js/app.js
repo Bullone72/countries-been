@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.2';
+const APP_VER = 'v1.13.3';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -641,16 +641,23 @@ function initGlobo(feats) {
        rivela anche le città non ancora salvate, così ci si ricorda e si tocca */
     cittaPerZoom() {
       const scelte = [];
-      let nazioni = 0;
+      const pov = this.pointOfView();
+      const cLon = pov ? pov.lon : 0;
+      const cLat = pov ? pov.lat : 0;
+      const on = [];
       for (const f of poligoni) {
         const c = centroide(f);
         const p = proj([c.lng, c.lat]);
         if (!p || isNaN(p[0]) || isNaN(p[1])) continue;
         if (p[0] >= -W / 2 && p[0] <= W * 1.5 && p[1] >= -H / 2 && p[1] <= H * 1.5) {
-          const l = stato.cittaPerNazione.get(f.key) || [];
-          scelte.push(...l);
-          if (++nazioni >= 10) break;
+          const dLon = Math.abs(c.lng - cLon) % 360;
+          const dLat = c.lat - cLat;
+          on.push({ key: f.key, d: dLat * dLat + (dLon > 180 ? 360 - dLon : dLon) * (dLon > 180 ? 360 - dLon : dLon) });
         }
+      }
+      on.sort((a, b) => a.d - b.d);
+      for (const o of on) {
+        scelte.push(...(stato.cittaPerNazione.get(o.key) || []));
       }
       return scelte;
     }
@@ -671,9 +678,9 @@ function liveAltitudine() {
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
    scende e "emergono" sempre più città, come nell'app Country Beans */
 function sogliaPopDaAlt(alt) {
-  if (alt == null) return 6000000;
+  if (alt == null) return 1500000;
   const al = Math.max(0.03, alt);
-  return Math.round(6000000 * (al / 2.2));
+  return Math.round(1500000 * (al / 2.2));
 }
 
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
