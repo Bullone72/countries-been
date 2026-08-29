@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.3';
+const APP_VER = 'v1.13.4';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -364,6 +364,15 @@ function initGlobo(feats) {
   }
 
   function puntoSchermo(c) {
+    /* nasconde i punti sul lato nascosto del globo (oltre il bordo a 90°):
+       con la proiezione ortografica proj([lon,lat]) restituirebbe la posizione
+       "attraverso" il globo, quindi qui controlliamo la distanza angolare dal
+       centro della vista e scartiamo ciò che sta sul lato opposto */
+    const dLon = (c.lon - vista.lon) * Math.PI / 180;
+    const la = c.lat * Math.PI / 180;
+    const lb = vista.lat * Math.PI / 180;
+    const cosTheta = Math.sin(la) * Math.sin(lb) + Math.cos(la) * Math.cos(lb) * Math.cos(dLon);
+    if (cosTheta < 0.02) return null;
     const p = proj([c.lon, c.lat]);
     if (!p) return null;
     return p;
