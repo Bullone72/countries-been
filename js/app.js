@@ -1,12 +1,12 @@
 'use strict';
 
-const APP_VER = 'v1.14.9';
+const APP_VER = 'v1.15.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
    ============================================================ */
 
-const URL_NAZIONI = 'https://unpkg.com/world-atlas@2.0.2/countries-110m.json';
+const URL_NAZIONI = 'https://unpkg.com/world-atlas@2.0.2/countries-50m.json';
 const URL_META    = 'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json';
 const URL_CITTA   = 'data/citta.geojson';
 const URL_TEXTURE = 'https://unpkg.com/three-globe/example/img/earth-night.jpg';
@@ -859,7 +859,7 @@ function puntiVisibili() {
   if (stato.selezionata) {
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 1500);
+      .slice(0, 700);
     lista.forEach(c => push(c));
   } else if (globo2d && alt != null && alt < 0.55) {
     /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
@@ -867,7 +867,7 @@ function puntiVisibili() {
     const lista = globo2d.cittaPerZoom()
       .filter(c => c && (c.pop || 0) >= soglia)
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 2000);
+      .slice(0, 700);
     lista.forEach(c => push(c));
     const centro = nazioneAlCentro();
     if (centro) {
@@ -905,8 +905,8 @@ function etichetteVisibili() {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
-      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 400);
+      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
+      .slice(0, 600);
     for (const c of extra) {
       elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
     }
@@ -991,10 +991,19 @@ function aggiornaPulsanteVisita() {
 
 function listaFiltrata() {
   const tutte = (stato.cittaPerNazione.get(stato.selezionata) || [])
-    .slice().sort((a, b) => b.pop - a.pop);
+    .slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
+  /* omonimi nella stessa nazione (es. molte "Springfield"): tieni solo la piu popolosa,
+     cosi la lista non si ripete */
+  const visti = new Set();
+  const uniche = tutte.filter(c => {
+    const k = norma(c.nome || '');
+    if (!k || visti.has(k)) return false;
+    visti.add(k);
+    return true;
+  });
   const q = norma(stato.query);
-  const filtrata = q ? tutte.filter(c => norma(c.nome).includes(q)) : tutte;
-  return { filtrata, totale: tutte.length };
+  const filtrata = q ? uniche.filter(c => norma(c.nome).includes(q)) : uniche;
+  return { filtrata, totale: uniche.length };
 }
 
 const MAX_RIGHE = 600;
@@ -1417,15 +1426,30 @@ async function avvia() {
 
     const feats = topojson.feature(topo, topo.objects.countries).features;
 
-    // chiavi univoche: alcuni id ("-99") sono duplicati nel dataset -> uso il nome
+    // chiavi univoche: alcuni id sono duplicati (110m: "-99"; 50m: "036" condiviso da
+    // Australia + Ashmore; territori senza codice). In caso di id numerico condiviso,
+    // la nazione vera (nome che corrisponde al meta di quel ccn3) tiene "c"+id,
+    // l'altra feature va su "x:nome".
     const conteggioId = {};
     feats.forEach(f => { const k = String(f.id); conteggioId[k] = (conteggioId[k] || 0) + 1; });
     const duplicati = new Set(Object.keys(conteggioId).filter(k => conteggioId[k] > 1));
 
     feats.forEach(f => {
       const id = String(f.id || '');
-      f.key = (/^\d+$/.test(id) && !duplicati.has(id)) ? 'c' + id : 'x:' + norma(f.properties.name);
+      if (/^\d+$/.test(id) && !duplicati.has(id)) {
+        f.key = 'c' + id;
+      } else if (/^\d+$/.test(id)) {
+        const m = indiceAlias.get(norma(f.properties.name));
+        f.key = (m && m.key === 'c' + id) ? 'c' + id : 'x:' + norma(f.properties.name);
+      } else {
+        f.key = 'x:' + norma(f.properties.name);
+      }
       f.meta = trovaMetaFeature(f);
+      if (/^x:/.test(f.key)) {
+        /* territori senza codice numerico (Kosovo, N. Cyprus...): il meta lo dà il nome */
+        const mByNome = indiceAlias.get(norma(f.properties.name));
+        if (mByNome) f.meta = mByNome;
+      }
       stato.featureByKey.set(f.key, f);
     });
 
