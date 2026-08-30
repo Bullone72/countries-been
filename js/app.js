@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.1';
+const APP_VER = 'v1.14.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -830,58 +830,52 @@ function nazioneAlCentro() {
 function puntiVisibili() {
   const mappa = new Map();
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
-  /* città visitate (sempre visibili) */
-  for (const id of stato.visitateCitta) {
-    push(stato.cittaById.get(id) || stato.cacheCitta[id]);
+  const alt = liveAltitudine();
+
+  /* Da lontananza massima NON si vede nessun pallino, solo le nazioni colorate.
+     Zoomando: prima emergono le citta gia visitate + casa (sotto 0.55), poi
+     ancora piu dentro le citta da selezionare (sotto 0.35). Modello Country Beans. */
+  if (alt != null && alt >= 0.55) return [];
+
+  /* citta visitate + casa: compaiono avvicinandosi, non da lontano */
+  if (stato.visitateCitta.size || stato.casaCitta) {
+    for (const id of stato.visitateCitta) {
+      push(stato.cittaById.get(id) || stato.cacheCitta[id]);
+    }
+    if (stato.casaCitta) {
+      push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
+    }
   }
-  /* città della nazione. Se una nazione è selezionata mostriamo TUTTE le sue
-     città (toccabili subito). Senza selezione, quando si è abbastanza "dentro"
-     con lo zoom mostriamo le città di TUTTE le nazioni visibili a schermo:
-     così si vedono anche quelle non ancora aggiunte e ci si può ricordare e
-     toccare per selezionarle. */
+
+  /* se una nazione e selezionata mostriamo TUTTE le sue citta (toccabili subito) */
   if (stato.selezionata) {
-    /* nazione scelta: tutte le sue città (toccabili subito) */
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 500);
     lista.forEach(c => push(c));
-  } else if (globo2d) {
-    /* Come nell'app Country Beans: le città da selezionare (non ancora
-       aggiunte) compaiono SOLO quando ti avvicini con lo zoom alla nazione.
-       Da lontano (alt alto) non si vedono: è inutile. Solo avvicinandosi
-       (alt sotto la soglia) "emergono" via via le più grandi, e avvicinandosi
-       ancora sempre di più, così puoi vedere e toccare quella giusta. */
-    const alt = liveAltitudine();
-    if (alt != null && alt < 0.35) {
-      const soglia = sogliaPopDaAlt(alt);
-      const lista = globo2d.cittaPerZoom()
-        .filter(c => c && (c.pop || 0) >= soglia)
-        .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-        .slice(0, 800);
-      lista.forEach(c => push(c));
-      /* in profondità può capitare che il centroide della nazione sia fuori
-         schermo: aggiungiamo comunque le città della nazione sotto il centro */
-      const centro = nazioneAlCentro();
-      if (centro) {
-        (stato.cittaPerNazione.get(centro) || [])
-          .filter(c => (c.pop || 0) >= soglia)
-          .forEach(c => push(c));
-      }
+  } else if (globo2d && alt != null && alt < 0.35) {
+    /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
+    const soglia = sogliaPopDaAlt(alt);
+    const lista = globo2d.cittaPerZoom()
+      .filter(c => c && (c.pop || 0) >= soglia)
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+      .slice(0, 800);
+    lista.forEach(c => push(c));
+    const centro = nazioneAlCentro();
+    if (centro) {
+      (stato.cittaPerNazione.get(centro) || [])
+        .filter(c => (c.pop || 0) >= soglia)
+        .forEach(c => push(c));
     }
   }
 
-  /* città dove vivo (sempre visibile): usiamo SEMPRE le coordinate salvate
-     in stato.casaCitta (quelle "reali" scelte online), così il puntino va giusto */
-  if (stato.casaCitta) {
-    push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
-  }
   return Array.from(mappa.values());
 }
 
 /* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
 function etichetteVisibili() {
   const alt = liveAltitudine();
-  if (alt == null || alt >= 0.5) return [];   // non ancora abbastanza vicini: niente nomi
+  if (alt == null || alt >= 0.55) return [];   // non ancora abbastanza vicini: niente nomi
   const elenco = [];
   const viste = new Set(stato.visitateCitta);
   const visite = [...viste].map(id =>
