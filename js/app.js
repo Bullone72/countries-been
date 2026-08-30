@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.13.8';
+const APP_VER = 'v1.13.9';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -846,24 +846,27 @@ function puntiVisibili() {
       .slice(0, 500);
     lista.forEach(c => push(c));
   } else if (globo2d) {
-    /* Come nell'app Country Beans: le città compaiono via via con lo zoom.
-       Da lontano solo le più grandi; avvicinandosi la soglia di popolazione
-       scende e "emergono" sempre più città, anche non ancora aggiunte, così
-       ci si ricorda e si toccano per selezionarle. */
+    /* Come nell'app Country Beans: le città da selezionare (non ancora
+       aggiunte) compaiono SOLO quando ti avvicini con lo zoom alla nazione.
+       Da lontano (alt alto) non si vedono: è inutile. Solo avvicinandosi
+       (alt sotto la soglia) "emergono" via via le più grandi, e avvicinandosi
+       ancora sempre di più, così puoi vedere e toccare quella giusta. */
     const alt = liveAltitudine();
-    const soglia = sogliaPopDaAlt(alt);
-    const lista = globo2d.cittaPerZoom()
-      .filter(c => c && (c.pop || 0) >= soglia)
-      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 800);
-    lista.forEach(c => push(c));
-    /* in profondità può capitare che il centroide della nazione sia fuori
-       schermo: aggiungiamo comunque le città della nazione sotto il centro */
-    const centro = nazioneAlCentro();
-    if (centro) {
-      (stato.cittaPerNazione.get(centro) || [])
-        .filter(c => (c.pop || 0) >= soglia)
-        .forEach(c => push(c));
+    if (alt != null && alt < 0.55) {
+      const soglia = sogliaPopDaAlt(alt);
+      const lista = globo2d.cittaPerZoom()
+        .filter(c => c && (c.pop || 0) >= soglia)
+        .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+        .slice(0, 800);
+      lista.forEach(c => push(c));
+      /* in profondità può capitare che il centroide della nazione sia fuori
+         schermo: aggiungiamo comunque le città della nazione sotto il centro */
+      const centro = nazioneAlCentro();
+      if (centro) {
+        (stato.cittaPerNazione.get(centro) || [])
+          .filter(c => (c.pop || 0) >= soglia)
+          .forEach(c => push(c));
+      }
     }
   }
 
@@ -896,7 +899,7 @@ function etichetteVisibili() {
   /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
      mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
      Country Beans) — limitiamo il numero per non riempire lo schermo */
-  if (globo2d && alt < 0.30) {
+  if (globo2d && alt < 0.55) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
