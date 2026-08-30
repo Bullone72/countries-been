@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.2';
+const APP_VER = 'v1.14.3';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -690,7 +690,7 @@ function liveAltitudine() {
 function sogliaPopDaAlt(alt) {
   if (alt == null) return 1500000;
   const al = Math.max(0.03, alt);
-  return Math.round(1500000 * Math.pow(al / 1.6, 3));
+  return Math.round(1500000 * Math.pow(al / 2.2, 2.2));
 }
 
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
@@ -835,7 +835,7 @@ function puntiVisibili() {
   /* Da lontananza massima NON si vede nessun pallino, solo le nazioni colorate.
      Zoomando: prima emergono le citta gia visitate + casa (sotto 0.55), poi
      ancora piu dentro le citta da selezionare (sotto 0.35). Modello Country Beans. */
-  if (alt != null && alt >= 0.55) return [];
+  if (alt != null && alt >= 0.7) return [];
 
   /* citta visitate + casa: compaiono avvicinandosi, non da lontano */
   if (stato.visitateCitta.size || stato.casaCitta) {
@@ -853,7 +853,7 @@ function puntiVisibili() {
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 500);
     lista.forEach(c => push(c));
-  } else if (globo2d && alt != null && alt < 0.35) {
+  } else if (globo2d && alt != null && alt < 0.55) {
     /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
     const soglia = sogliaPopDaAlt(alt);
     const lista = globo2d.cittaPerZoom()
@@ -875,7 +875,7 @@ function puntiVisibili() {
 /* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
 function etichetteVisibili() {
   const alt = liveAltitudine();
-  if (alt == null || alt >= 0.55) return [];   // non ancora abbastanza vicini: niente nomi
+  if (alt == null || alt >= 0.7) return [];   // non ancora abbastanza vicini: niente nomi
   const elenco = [];
   const viste = new Set(stato.visitateCitta);
   const visite = [...viste].map(id =>
@@ -893,7 +893,7 @@ function etichetteVisibili() {
   /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
      mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
      Country Beans) — limitiamo il numero per non riempire lo schermo */
-  if (globo2d && alt < 0.35) {
+  if (globo2d && alt < 0.55) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
