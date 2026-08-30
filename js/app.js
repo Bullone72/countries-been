@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.0';
+const APP_VER = 'v1.14.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -571,7 +571,7 @@ function initGlobo(feats) {
 
   const MIN_ALT = 0.03;
   const MAX_ALT = 2.7;
-  const SOGLIA_NOMI = 0.35;
+  const SOGLIA_NOMI = 0.5;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
 
   /* ---------------- ciclo di rendering (rotazione + inerzia) ---------------- */
@@ -690,7 +690,7 @@ function liveAltitudine() {
 function sogliaPopDaAlt(alt) {
   if (alt == null) return 1500000;
   const al = Math.max(0.03, alt);
-  return Math.round(1500000 * (al / 2.2));
+  return Math.round(1500000 * Math.pow(al / 1.6, 3));
 }
 
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
@@ -852,7 +852,7 @@ function puntiVisibili() {
        (alt sotto la soglia) "emergono" via via le più grandi, e avvicinandosi
        ancora sempre di più, così puoi vedere e toccare quella giusta. */
     const alt = liveAltitudine();
-    if (alt != null && alt < 0.55) {
+    if (alt != null && alt < 0.35) {
       const soglia = sogliaPopDaAlt(alt);
       const lista = globo2d.cittaPerZoom()
         .filter(c => c && (c.pop || 0) >= soglia)
@@ -904,7 +904,7 @@ function etichetteVisibili() {
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 40);
+      .slice(0, 120);
     for (const c of extra) {
       elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false });
     }
