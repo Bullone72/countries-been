@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.4';
+const APP_VER = 'v1.14.5';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -398,7 +398,7 @@ function initGlobo(feats) {
   }
 
   function disegnaNomi() {
-    const alt = vista.alt;
+    const alt = liveAltitudine();
     if (alt >= SOGLIA_NOMI) return;
     ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
     ctx.textAlign = 'left';
@@ -1437,7 +1437,7 @@ async function avvia() {
       const casa = stato.casaCitta ? stato.casaCitta.nome + ' (' + stato.casaCitta.lat + ',' + stato.casaCitta.lon + ')' : 'nessuna';
       const sel = stato.selezionata || 'nessuna';
       const alt = liveAltitudine() != null ? liveAltitudine().toFixed(2) : '?';
-      toast('📊 punti=' + c.punti + ' | casa: ' + casa + ' | sel: ' + sel + ' | alt=' + alt + ' | ver=' + APP_VER, 5500);
+      toast('📊 punti=' + c.punti + ' etichette=' + c.etichette + ' | casa: ' + casa + ' | sel: ' + sel + ' | alt=' + alt + ' | ver=' + APP_VER, 5500);
     }, 2000);
 
     /* verifica dopo 4 secondi che il canvas esista */
