@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.7';
+const APP_VER = 'v1.14.8';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -25,6 +25,7 @@ const COL = {
   nazioneCasaSel: 'rgba(196,181,253,0.98)',
   cittaVista: '#ff2d2d',                  // rosso vivo: città visitata
   cittaNo: '#000000',                     // nero: città non ancora visitata
+  cittaCap: '#ffd166',                  // oro: capitale
   cittaCasa: '#c084fc'                    // viola vivo: città dove vivo
 };
 
@@ -224,6 +225,7 @@ function eCasa(id) {
 
 function colorePunto(c) {
   if (eCasa(c.id)) return COL.cittaCasa;
+  if (c.cap) return COL.cittaCap;
   return stato.visitateCitta.has(c.id) ? COL.cittaVista : COL.cittaNo;
 }
 
@@ -384,15 +386,16 @@ function initGlobo(feats) {
       if (!p) continue;
       const casa = eCasa(c.id);
       const visitata = stato.visitateCitta.has(c.id);
-      const r = casa ? 2.6 : (visitata ? 1.5 : 1.2);
+      const cap = !casa && !!c.cap;
+      const r = casa ? 2.6 : (cap ? 2.0 : (visitata ? 1.5 : 1.2));
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
       ctx.fill();
       /* bordo chiaro su TUTTI i punti: rende visibili anche i pallini neri
          (non visitati) sullo sfondo scuro dell'oceano */
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = visitata || casa ? 1.0 : 0.8;
+      ctx.strokeStyle = cap ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = (visitata || casa || cap) ? 1.1 : 0.8;
       ctx.stroke();
     }
   }
@@ -406,12 +409,15 @@ function initGlobo(feats) {
     for (const e of etichette) {
       const p = puntoSchermo(e);
       if (!p) continue;
+      const cap = e.cap && !e.casa;
+      const fz = cap ? Math.round(scaleFont) + 2 : Math.round(scaleFont);
+      ctx.font = '600 ' + fz + 'px system-ui';
       ctx.fillStyle = 'rgba(8,14,32,0.82)';
       const larg = ctx.measureText(e.nome).width;
-      roundRect(p[0] + 4, p[1] - 8, larg + 8, 16, 3);
+      roundRect(p[0] + 4, p[1] - 8, larg + 8, cap ? 18 : 16, 3);
       ctx.fill();
-      ctx.fillStyle = e.casa ? '#c084fc' : (e.vis ? '#ff6b6b' : '#5eead4');
-      ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+      ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (e.vis ? '#ff6b6b' : '#5eead4'));
+      ctx.font = '600 ' + fz + 'px system-ui';
       ctx.fillText(e.nome, p[0] + 8, p[1]);
     }
   }
@@ -691,7 +697,7 @@ function liveAltitudine() {
 function sogliaPopDaAlt(alt) {
   if (alt == null) return 1500000;
   const al = Math.max(0.03, alt);
-  return Math.round(1500000 * Math.pow(al / 2.2, 2.2));
+  return Math.round(500000 * Math.pow(al / 2.2, 2));
 }
 
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
@@ -804,6 +810,7 @@ function costruisciCittaDa(gj) {
       lat: Number(p.latitude),
       lon: Number(p.longitude),
       pop: Number(p.pop_max) || 0,
+      cap: Number(p.adm0cap) === 1,
       key
     };
     stato.cittaById.set(id, c);
@@ -852,7 +859,7 @@ function puntiVisibili() {
   if (stato.selezionata) {
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 500);
+      .slice(0, 1500);
     lista.forEach(c => push(c));
   } else if (globo2d && alt != null && alt < 0.55) {
     /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
@@ -860,7 +867,7 @@ function puntiVisibili() {
     const lista = globo2d.cittaPerZoom()
       .filter(c => c && (c.pop || 0) >= soglia)
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 800);
+      .slice(0, 2000);
     lista.forEach(c => push(c));
     const centro = nazioneAlCentro();
     if (centro) {
@@ -882,7 +889,7 @@ function etichetteVisibili() {
   const visite = [...viste].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
   for (const c of visite) {
-    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id), vis: true });
+    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id), vis: true, cap: !!c.cap });
   }
   /* casa: sempre presente, con le coordinate salvate (così compare anche il nome) */
   if (stato.casaCitta) {
@@ -899,9 +906,9 @@ function etichetteVisibili() {
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 120);
+      .slice(0, 400);
     for (const c of extra) {
-      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false });
+      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
     }
   }
   return elenco;
