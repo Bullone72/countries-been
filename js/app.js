@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.5';
+const APP_VER = 'v1.14.6';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -647,6 +647,7 @@ function initGlobo(feats) {
     width(w) { if (w) { W = w; ridimensiona(); } return W; },
     height(h) { if (h) { H = h; ridimensiona(); } return H; },
     debugCounts() { return { punti: punti.length, etichette: etichette.length }; },
+    currentPoints() { return punti.slice(); },
     /* città delle nazioni visibili a schermo (per lo zoom manuale):
        rivela anche le città non ancora salvate, così ci si ricorda e si tocca */
     cittaPerZoom() {
