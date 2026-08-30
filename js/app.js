@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.15.0';
+const APP_VER = 'v1.16.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -575,7 +575,7 @@ function initGlobo(feats) {
     daRidisegnare = true;
   }, { passive: false });
 
-  const MIN_ALT = 0.03;
+  const MIN_ALT = 0.015;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.55;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
@@ -691,12 +691,16 @@ function liveAltitudine() {
   return pov ? pov.alt : null;
 }
 
+/* distanza (alt) oltre la quale NON compaiono le città da selezionare:
+   molto più "dentro" lo zoom rispetto a prima, per non riempire lo schermo */
+const GATE_CITTA = 0.25;
+
 /* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
    scende e "emergono" sempre più città, come nell'app Country Beans */
 function sogliaPopDaAlt(alt) {
   if (alt == null) return 1500000;
-  const al = Math.max(0.03, alt);
+  const al = Math.max(0.015, alt);
   return Math.round(500000 * Math.pow(al / 2.2, 2));
 }
 
@@ -861,7 +865,7 @@ function puntiVisibili() {
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 700);
     lista.forEach(c => push(c));
-  } else if (globo2d && alt != null && alt < 0.55) {
+  } else if (globo2d && alt != null && alt < GATE_CITTA) {
     /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
     const soglia = sogliaPopDaAlt(alt);
     const lista = globo2d.cittaPerZoom()
@@ -901,12 +905,12 @@ function etichetteVisibili() {
   /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
      mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
      Country Beans) — limitiamo il numero per non riempire lo schermo */
-  if (globo2d && alt < 0.55) {
+  if (globo2d && alt < GATE_CITTA) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
       .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .slice(0, 600);
+      .slice(0, 700);
     for (const c of extra) {
       elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
     }
