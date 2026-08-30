@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.3';
+const APP_VER = 'v1.14.4';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -571,7 +571,7 @@ function initGlobo(feats) {
 
   const MIN_ALT = 0.03;
   const MAX_ALT = 2.7;
-  const SOGLIA_NOMI = 0.5;
+  const SOGLIA_NOMI = 0.55;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
 
   /* ---------------- ciclo di rendering (rotazione + inerzia) ---------------- */
