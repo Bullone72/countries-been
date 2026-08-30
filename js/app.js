@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.6';
+const APP_VER = 'v1.14.7';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -410,7 +410,7 @@ function initGlobo(feats) {
       const larg = ctx.measureText(e.nome).width;
       roundRect(p[0] + 4, p[1] - 8, larg + 8, 16, 3);
       ctx.fill();
-      ctx.fillStyle = e.casa ? '#c084fc' : '#ff6b6b';
+      ctx.fillStyle = e.casa ? '#c084fc' : (e.vis ? '#ff6b6b' : '#5eead4');
       ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
       ctx.fillText(e.nome, p[0] + 8, p[1]);
     }
@@ -882,13 +882,13 @@ function etichetteVisibili() {
   const visite = [...viste].map(id =>
     stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
   for (const c of visite) {
-    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id) });
+    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id), vis: true });
   }
   /* casa: sempre presente, con le coordinate salvate (così compare anche il nome) */
   if (stato.casaCitta) {
     if (!viste.has(stato.casaCitta.id)) {
       const casa = { id: stato.casaCitta.id };
-      elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true });
+      elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true, vis: true });
     }
   }
   /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
@@ -901,7 +901,7 @@ function etichetteVisibili() {
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
       .slice(0, 120);
     for (const c of extra) {
-      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false });
+      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false });
     }
   }
   return elenco;
@@ -913,6 +913,7 @@ function aggiornaPunti() {
     globo2d.pointsData(puntiVisibili());
     globo2d.labelsData(etichetteVisibili());
   } catch (e) {}
+  aggiornaHUD();
 }
 
 function toggleCitta(id) {
@@ -1432,14 +1433,7 @@ async function avvia() {
     document.getElementById('caricamento').classList.add('nascosto');
     setTimeout(() => document.getElementById('caricamento').remove(), 600);
     toast('✅ Aggiornata alla versione ' + APP_VER + ' 👆 Tocca una nazione per iniziare', 4500);
-    /* diagnostic: riporta lo stato reale dell'app così possiamo capire cosa manca */
-    setTimeout(() => {
-      const c = globo2d ? globo2d.debugCounts() : { punti: -1, etichette: -1 };
-      const casa = stato.casaCitta ? stato.casaCitta.nome + ' (' + stato.casaCitta.lat + ',' + stato.casaCitta.lon + ')' : 'nessuna';
-      const sel = stato.selezionata || 'nessuna';
-      const alt = liveAltitudine() != null ? liveAltitudine().toFixed(2) : '?';
-      toast('📊 punti=' + c.punti + ' etichette=' + c.etichette + ' | casa: ' + casa + ' | sel: ' + sel + ' | alt=' + alt + ' | ver=' + APP_VER, 5500);
-    }, 2000);
+    aggiornaHUD();
 
     /* verifica dopo 4 secondi che il canvas esista */
     setTimeout(() => {
@@ -1457,6 +1451,22 @@ async function avvia() {
 }
 
 /* ---------------- eventi interfaccia ---------------- */
+
+/* contatore live: punti e nomi visibili a schermo, aggiornato durante lo zoom */
+function aggiornaHUD() {
+  try {
+    let el = document.getElementById('hud-counts');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'hud-counts';
+      el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:9999;background:rgba(8,14,32,0.85);color:#bfe0ff;font:12px system-ui;padding:5px 9px;border-radius:7px;pointer-events:none;white-space:pre';
+      document.body.appendChild(el);
+    }
+    const dc = globo2d ? globo2d.debugCounts() : { punti: -1, etichette: -1 };
+    const alt = liveAltitudine();
+    el.textContent = 'punti=' + dc.punti + '  nomi=' + dc.etichette + (alt != null ? '  zoom=' + alt.toFixed(2) : '');
+  } catch (e) {}
+}
 
 /* ---------------- diagnostica visibile (utile se il PC non disegna il globo) ---------------- */
 
