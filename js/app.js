@@ -899,7 +899,7 @@ function etichetteVisibili() {
   /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
      mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
      Country Beans) — limitiamo il numero per non riempire lo schermo */
-  if (globo2d && alt < 0.55) {
+  if (globo2d && alt < 0.35) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
