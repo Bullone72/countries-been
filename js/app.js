@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.14.8';
+const APP_VER = 'v1.14.9';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -1466,7 +1466,7 @@ function aggiornaHUD() {
     if (!el) {
       el = document.createElement('div');
       el.id = 'hud-counts';
-      el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:9999;background:rgba(8,14,32,0.85);color:#bfe0ff;font:12px system-ui;padding:5px 9px;border-radius:7px;pointer-events:none;white-space:pre';
+      el.style.cssText = 'position:fixed;bottom:8px;left:12px;z-index:9999;background:rgba(8,14,32,0.8);color:#bfe0ff;font:12px system-ui;padding:5px 9px;border-radius:7px;pointer-events:none;white-space:pre';
       document.body.appendChild(el);
     }
     const dc = globo2d ? globo2d.debugCounts() : { punti: -1, etichette: -1 };
