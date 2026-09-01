@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.2';
+const APP_VER = 'v1.20.3';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -408,13 +408,12 @@ function initGlobo(feats) {
 
   function disegnaNomi() {
     const alt = liveAltitudine();
-    if (alt >= SOGLIA_NOMI) return;
+    if (alt >= SOGLIA_NOMI && !stato.selezionata) return;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    /* anti-accavallamento: le etichette sono già in ordine di priorità
-       (visitate/casa, poi capitali, poi per popolazione); a zoom pieno disegno
-       solo quelle che non si sovrappongono a una già disegnata, così ogni
-       nome resta leggibile */
+    /* Nazione selezionata: disegno il nome di OGNI città (l'utente vuole
+       vedere a cosa corrisponde ogni pallino). Senza selezione, su tutto
+       il globo, uso l'anti-accavallamento per non riempire lo schermo. */
     const occupati = [];
     const collida = (r) => occupati.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
     for (const e of etichette) {
@@ -425,7 +424,7 @@ function initGlobo(feats) {
       ctx.font = '600 ' + fz + 'px system-ui';
       const larg = ctx.measureText(e.nome).width;
       const x0 = p[0] + 4, y0 = p[1] - 8, x1 = x0 + larg + 8, y1 = y0 + (cap ? 18 : 16);
-      if (collida([x0, y0, x1, y1])) continue;
+      if (!stato.selezionata && collida([x0, y0, x1, y1])) continue;
       occupati.push([x0, y0, x1, y1]);
       ctx.fillStyle = 'rgba(8,14,32,0.82)';
       roundRect(x0, y0, x1 - x0, y1 - y0, 3);
@@ -877,12 +876,7 @@ function puntiVisibili() {
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
   const alt = liveAltitudine();
 
-  /* Da lontananza massima NON si vede nessun pallino, solo le nazioni colorate.
-     Zoomando: prima emergono le citta gia visitate + casa (sotto 0.55), poi
-     ancora piu dentro le citta da selezionare (sotto 0.35). Modello Country Beans. */
-  if (alt != null && alt >= 0.7) return [];
-
-  /* citta visitate + casa: compaiono avvicinandosi, non da lontano */
+  /* citta visitate + casa: sempre visibili (se non troppo lontani) */
   if (stato.visitateCitta.size || stato.casaCitta) {
     for (const id of stato.visitateCitta) {
       push(stato.cittaById.get(id) || stato.cacheCitta[id]);
@@ -895,23 +889,37 @@ function puntiVisibili() {
   /* se una nazione e selezionata mostriamo TUTTE le sue citta (toccabili subito) */
   if (stato.selezionata) {
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
-      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 1500);
+      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
+      .slice(0, 3000);
     lista.forEach(c => push(c));
-  } else if (globo2d && alt != null && alt < GATE_CITTA) {
-    /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
-    const soglia = sogliaPopDaAlt(alt);
-    const lista = globo2d.cittaPerZoom()
-      .filter(c => c && (c.pop || 0) >= soglia)
-      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 1500);
-    lista.forEach(c => push(c));
-    const centro = nazioneAlCentro();
-    if (centro) {
-      (stato.cittaPerNazione.get(centro) || [])
-        .filter(c => (c.pop || 0) >= soglia)
-        .forEach(c => push(c));
-    }
+    return Array.from(mappa.values());
+  }
+
+  /* NESSUNA nazione selezionata: guardiamo tutto il globo.
+     Da lontano NON mostriamo nulla (solo nazioni colorate).
+     Avvicinandosi "emergono" le città: prima le capitali e le città maggiori
+     di ogni nazione, poi (vicini) le più piccole. Così nessuna nazione
+     appare più completamente vuota appena ci si avvicina. */
+  if (alt != null && alt >= 0.7) return [];
+
+  /* quante città per nazione mostrare, in base allo zoom:
+     lontano poche (le principali), vicino di più */
+  let perNazione = 1;
+  if (alt < 0.3) perNazione = 2;
+  if (alt < 0.12) perNazione = 5;
+  if (alt < GATE_CITTA) perNazione = 30;
+
+  /* quali nazioni sono a schermo (le più vicine al centro) */
+  const cio = globo2d ? globo2d.cittaPerZoom() : [];
+  const chiaviVedute = new Set();
+  for (const c of cio) chiaviVedute.add(c.key);
+
+  for (const k of chiaviVedute) {
+    const tutte = (stato.cittaPerNazione.get(k) || [])
+      .slice()
+      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
+      .slice(0, perNazione);
+    tutte.forEach(c => push(c));
   }
 
   return Array.from(mappa.values());
@@ -940,13 +948,15 @@ function etichetteVisibili() {
   /* nomi per TUTTE le città attualmente visibili come punti:
      currentPoints() restituisce i punti di puntiVisibili(), che include
      le città della nazione selezionata, quelle per popolazione, ecc.
-     I nomi compaiono sempre col pallino corrispondente */
+     I nomi compaiono sempre col pallino corrispondente —
+     se una nazione è selezionata, ogni pallino ha il suo nome (niente
+     anti-accavallamento che li nasconda: l'utente li vuole vedere). */
   if (globo2d) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
       .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .slice(0, 1500);
+      .slice(0, 3000);
     for (const c of extra) {
       elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
     }
