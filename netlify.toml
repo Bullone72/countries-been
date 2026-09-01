@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+  command = "echo 'Static site, no build needed'"
+
+[[headers]]
+  for = "sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/js/app.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/data/citta.geojson"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
