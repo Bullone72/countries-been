@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.1';
+const APP_VER = 'v1.20.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -917,10 +917,12 @@ function puntiVisibili() {
   return Array.from(mappa.values());
 }
 
-/* nomi delle città da mostrare; solo quando si è abbastanza vicini (zoom in) */
+/* nomi delle città: compaiono INSIEME ai pallini, non con soglia separata.
+   I pallini sono già filtrati da puntiVisibili() per popolazione e zoom,
+   quindi i nomi seguono la stessa logica: se vedi il pallino, vedi il nome */
 function etichetteVisibili() {
   const alt = liveAltitudine();
-  if (alt == null || alt >= 0.7) return [];   // non ancora abbastanza vicini: niente nomi
+  if (alt == null || alt >= 0.7) return [];
   const elenco = [];
   const viste = new Set(stato.visitateCitta);
   const visite = [...viste].map(id =>
@@ -935,10 +937,11 @@ function etichetteVisibili() {
       elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true, vis: true });
     }
   }
-  /* città non ancora visitate visibili a schermo: mostriamo i loro nomi man
-     mano che ci si avvicina, così si capisce QUALE pallino è quale (modello
-     Country Beans) — limitiamo il numero per non riempire lo schermo */
-  if (globo2d && alt < GATE_CITTA) {
+  /* nomi per TUTTE le città attualmente visibili come punti:
+     currentPoints() restituisce i punti di puntiVisibili(), che include
+     le città della nazione selezionata, quelle per popolazione, ecc.
+     I nomi compaiono sempre col pallino corrispondente */
+  if (globo2d) {
     const attuali = globo2d.currentPoints() || [];
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
