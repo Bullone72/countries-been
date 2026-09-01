@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.19.0';
+const APP_VER = 'v1.20.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -173,7 +173,13 @@ function trovaKeyCitta(props) {
   return null;
 }
 
-/* ---------------- globo ---------------- */
+/* -
+   microstati e nazioni molto piccole (Monaco, Vaticano, San Marino, Cipro...):
+   area sferica minima -> quando tocchi diamo la priorita alla NAZIONE (per
+   marcarla come visitata) invece che alla citta che la copre */
+function eMicrostato(f) {
+  try { return d3.geoArea(f) < 0.001; } catch (e) { return false; }
+}
 
 function coloreCap(f) {
   if (f.key === stato.casaNazione) {
@@ -573,10 +579,12 @@ function initGlobo(feats) {
       const raggio = scalaAttuale();
       const dx = e.clientX - W / 2, dy = e.clientY - H / 2;
       if (Math.hypot(dx, dy) <= raggio) {
+        const f0 = nazioneSotto(e.clientX, e.clientY);
+        /* microstato: il tocco apre la NAZIONE (per marcarla), non la citta */
+        if (f0 && eMicrostato(f0)) { selezionaNazione(f0); return; }
         const c = cittaSotto(e.clientX, e.clientY);
         if (c) { toggleCitta(c.id); return; }
-        const f = nazioneSotto(e.clientX, e.clientY);
-        if (f) selezionaNazione(f);
+        if (f0) selezionaNazione(f0);
         else deseleziona();
       }
     }
@@ -596,7 +604,7 @@ function initGlobo(feats) {
     daRidisegnare = true;
   }, { passive: false });
 
-  const MIN_ALT = 0.012;
+  const MIN_ALT = 0.01;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.55;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
