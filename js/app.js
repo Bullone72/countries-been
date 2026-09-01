@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.17.0';
+const APP_VER = 'v1.18.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -707,7 +707,7 @@ function liveAltitudine() {
 
 /* distanza (alt) oltre la quale NON compaiono le città da selezionare:
    molto più "dentro" lo zoom rispetto a prima, per non riempire lo schermo */
-const GATE_CITTA = 0.15;
+const GATE_CITTA = 0.08;
 
 /* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
@@ -877,7 +877,7 @@ function puntiVisibili() {
   if (stato.selezionata) {
     const lista = (stato.cittaPerNazione.get(stato.selezionata) || []).slice()
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 700);
+      .slice(0, 1500);
     lista.forEach(c => push(c));
   } else if (globo2d && alt != null && alt < GATE_CITTA) {
     /* citta da selezionare: compaiono SOLO quando ti avvicini abbastanza */
@@ -885,7 +885,7 @@ function puntiVisibili() {
     const lista = globo2d.cittaPerZoom()
       .filter(c => c && (c.pop || 0) >= soglia)
       .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-      .slice(0, 700);
+      .slice(0, 1500);
     lista.forEach(c => push(c));
     const centro = nazioneAlCentro();
     if (centro) {
@@ -924,7 +924,7 @@ function etichetteVisibili() {
     const extra = attuali
       .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
       .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .slice(0, 700);
+      .slice(0, 1500);
     for (const c of extra) {
       elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
     }
