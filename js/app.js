@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.16.0';
+const APP_VER = 'v1.17.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -463,7 +463,21 @@ function initGlobo(feats) {
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d < miglioreD) { miglioreD = d; miglior = c; }
     }
-    return miglior;
+    if (miglior) return miglior;
+    /* toccando il NOME (disegnato accanto al pallino) si deve selezionare
+       la città come tocchi il pallino, non aprire la nazione */
+    ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+    for (const e of etichette) {
+      const p = puntoSchermo(e);
+      if (!p) continue;
+      const larg = ctx.measureText(e.nome).width;
+      const x0 = p[0] + 4, y0 = p[1] - 8, largB = larg + 8, altB = e.cap ? 18 : 16;
+      if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
+        const c = stato.cittaById.get(e.id);
+        if (c) return c;
+      }
+    }
+    return null;
   }
 
   function pointerGiù(e) {
@@ -693,7 +707,7 @@ function liveAltitudine() {
 
 /* distanza (alt) oltre la quale NON compaiono le città da selezionare:
    molto più "dentro" lo zoom rispetto a prima, per non riempire lo schermo */
-const GATE_CITTA = 0.25;
+const GATE_CITTA = 0.15;
 
 /* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
@@ -927,8 +941,9 @@ function aggiornaPunti() {
   aggiornaHUD();
 }
 
-function toggleCitta(id) {
-  if (stato.visitateCitta.has(id)) {
+function toggleCitta(id, centra) {
+  const eraVisitata = stato.visitateCitta.has(id);
+  if (eraVisitata) {
     stato.visitateCitta.delete(id);
   } else {
     stato.visitateCitta.add(id);
@@ -943,6 +958,12 @@ function toggleCitta(id) {
   aggiornaPunti();
   aggiornaRigaCitta(id);
   aggiornaContatoreCitta();
+  /* scelta dalla lista: mantengo l'immagine sul punto (zoom stretto),
+     invece di far riallontanare il globo */
+  if (centra && !eraVisitata) {
+    const c = stato.cittaById.get(id) || stato.cacheCitta[id];
+    if (c && globo2d) globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: 0.05 }, 800);
+  }
 }
 
 /* ---------------- pannello ---------------- */
@@ -1133,7 +1154,7 @@ function renderListaCitta() {
 
   el.innerHTML = html;
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
-    r.addEventListener('click', () => toggleCitta(r.dataset.id)));
+    r.addEventListener('click', () => toggleCitta(r.dataset.id, true)));
 
   el.querySelector('#aggiungi-citta').addEventListener('click', () => {
     const nome = prompt('Nome della città:', q || '');
