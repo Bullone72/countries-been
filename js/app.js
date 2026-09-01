@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.18.0';
+const APP_VER = 'v1.19.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -403,21 +403,28 @@ function initGlobo(feats) {
   function disegnaNomi() {
     const alt = liveAltitudine();
     if (alt >= SOGLIA_NOMI) return;
-    ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    /* anti-accavallamento: le etichette sono già in ordine di priorità
+       (visitate/casa, poi capitali, poi per popolazione); a zoom pieno disegno
+       solo quelle che non si sovrappongono a una già disegnata, così ogni
+       nome resta leggibile */
+    const occupati = [];
+    const collida = (r) => occupati.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
     for (const e of etichette) {
       const p = puntoSchermo(e);
       if (!p) continue;
       const cap = e.cap && !e.casa;
       const fz = cap ? Math.round(scaleFont) + 2 : Math.round(scaleFont);
       ctx.font = '600 ' + fz + 'px system-ui';
-      ctx.fillStyle = 'rgba(8,14,32,0.82)';
       const larg = ctx.measureText(e.nome).width;
-      roundRect(p[0] + 4, p[1] - 8, larg + 8, cap ? 18 : 16, 3);
+      const x0 = p[0] + 4, y0 = p[1] - 8, x1 = x0 + larg + 8, y1 = y0 + (cap ? 18 : 16);
+      if (collida([x0, y0, x1, y1])) continue;
+      occupati.push([x0, y0, x1, y1]);
+      ctx.fillStyle = 'rgba(8,14,32,0.82)';
+      roundRect(x0, y0, x1 - x0, y1 - y0, 3);
       ctx.fill();
       ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (e.vis ? '#ff6b6b' : '#5eead4'));
-      ctx.font = '600 ' + fz + 'px system-ui';
       ctx.fillText(e.nome, p[0] + 8, p[1]);
     }
   }
@@ -589,7 +596,7 @@ function initGlobo(feats) {
     daRidisegnare = true;
   }, { passive: false });
 
-  const MIN_ALT = 0.015;
+  const MIN_ALT = 0.012;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.55;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
@@ -707,7 +714,7 @@ function liveAltitudine() {
 
 /* distanza (alt) oltre la quale NON compaiono le città da selezionare:
    molto più "dentro" lo zoom rispetto a prima, per non riempire lo schermo */
-const GATE_CITTA = 0.08;
+const GATE_CITTA = 0.06;
 
 /* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
