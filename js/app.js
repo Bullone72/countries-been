@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.0';
+const APP_VER = 'v1.20.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -805,15 +805,19 @@ function toggleNazione() {
 
 async function caricaCitta() {
   try {
-    /* 1) prova la cache locale (svelta, offline) */
-    const cache = await caches.open('cb-dati');
+    /* cache VERSIONATA per le citta: ad ogni versione dell'app scarichiamo
+       l'ultimo database (alimentato anche dal service worker network-first).
+       Se non c'e' rete, si riusa la cache piu recente gia' salvata. */
+    const cache = await caches.open('cb-citta-' + APP_VER);
     let gj = null;
     try {
       const ris = await cache.match(URL_CITTA);
       if (ris) gj = await ris.json();
+      else {
+        gj = await fetchJson(URL_CITTA);
+        try { cache.put(URL_CITTA, new Response(JSON.stringify(gj), { headers: { 'Content-Type': 'application/json' } })); } catch (e) {}
+      }
     } catch (e) {}
-
-    /* 2) altrimenti scarica e mette in cache per la prossima volta */
     if (!gj) {
       gj = await fetchJson(URL_CITTA);
       try { cache.put(URL_CITTA, new Response(JSON.stringify(gj), { headers: { 'Content-Type': 'application/json' } })); } catch (e) {}

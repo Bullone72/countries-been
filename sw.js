@@ -6,7 +6,7 @@
    scaricarle di nuovo. Chiudere e riaprire = aggiornata.
    ============================================================ */
 
-const VERSIONE = 'v1.20.0';
+const VERSIONE = 'v1.20.1';
 
 /* librerie esterne pesanti: messe in cache (non ri-scaricate ad ogni avvio) */
 const STATICHE = [
@@ -14,9 +14,12 @@ const STATICHE = [
   'https://unpkg.com/d3-array@3/dist/d3-array.min.js',
   'https://unpkg.com/d3-geo@3/dist/d3-geo.min.js',
   'https://unpkg.com/world-atlas@2.0.2/countries-50m.json',
-  'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json',
-  './data/citta.geojson'
+  'https://cdn.jsdelivr.net/npm/world-countries@5/dist/countries-unescaped.json'
 ];
+
+/* NOTA: data/citta.geojson NON e' nelle STATICHE (e' un file mutevole): viene
+   servito dal blocco network-first qui sotto, cosi un cambio versione scarica
+   sempre l'ultimo database (e l'app lo mette in una cache versionata). */
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
