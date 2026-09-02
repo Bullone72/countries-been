@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.6';
+const APP_VER = 'v1.20.7';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -295,8 +295,8 @@ function initGlobo(feats) {
     autoRotate: false,           // il globo si muove SOLO se lo muovi tu
     autoRotateSpeed: 0,
     enableDamping: true,
-    dampingFactor: 0.2,
-    rotateSpeed: 0.55,
+    dampingFactor: 0.3,
+    rotateSpeed: 0.5,
     zoomSpeed: 0.6
   };
 
@@ -513,15 +513,15 @@ function initGlobo(feats) {
       const dy = e.clientY - ultimoY;
       /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
       const gradiPerPx = 360 / (scalaAttuale() * Math.PI * 2);
-      vista.lon -= dx * gradiPerPx * controlli.rotateSpeed * 3;
-      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * gradiPerPx * controlli.rotateSpeed * 3));
+      vista.lon -= dx * gradiPerPx * controlli.rotateSpeed;
+      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * gradiPerPx * controlli.rotateSpeed));
       /* normalizza lon */
       vista.lon = ((vista.lon % 360) + 360) % 360;
       /* inerzia */
       const ora = performance.now();
       const dt = Math.max(1, ora - lastTime);
-      velX = dx * gradiPerPx * controlli.rotateSpeed * 3 * (dt / 16);
-      velY = dy * gradiPerPx * controlli.rotateSpeed * 3 * (dt / 16);
+      velX = dx * gradiPerPx * controlli.rotateSpeed * (dt / 16);
+      velY = dy * gradiPerPx * controlli.rotateSpeed * (dt / 16);
       lastTime = ora;
       ultimoX = e.clientX; ultimoY = e.clientY;
     } else if (dita.size === 2) {
@@ -529,8 +529,8 @@ function initGlobo(feats) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (distanzaDita > 0 && d > 0) {
         const f = d / distanzaDita;
-        /* più sensibile: spingendo il pizzico entri più in fretta */
-        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.5)));
+        /* zoom proporzionale ma non troppo sensibile: entra in modo controllato */
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.2)));
       }
     }
   }
@@ -596,7 +596,10 @@ function initGlobo(feats) {
     let delta = e.deltaY;
     if (e.deltaMode === 1) delta *= 16;      // linee -> ~pixel
     else if (e.deltaMode === 2) delta *= 120; // pagine -> grande
-    const f = Math.pow(0.82, (delta || 0) * 0.02);
+    /* zoom "governabile": ogni notch della rotella fa un passo moderato e il
+       delta viene capato, così i mouse velocissimi non saltano tutto */
+    const passo = Math.max(-120, Math.min(120, (delta || 0)));
+    const f = Math.pow(0.9985, passo);
     vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, vista.alt * f));
     daRidisegnare = true;
   }, { passive: false });
