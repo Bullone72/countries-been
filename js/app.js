@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.8';
+const APP_VER = 'v1.20.9';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -877,26 +877,87 @@ async function caricaCitta() {
 }
 
 function costruisciCittaDa(gj) {
+  /* Raggruppamento in METROPOLI: nei dataset "world cities" ogni comune/
+     arrondissement (es. i quartieri di Parigi, i comuni della cintura di Milano)
+     e' una voce separata -> un'inutile nuvola di nomi sovrapposti sulla stessa
+     area. Raggruppiamo per prossimita': le voci vicine a una citta piu' popolosa
+     vengono considerate parte della stessa metropoli e NON mostrate come pal-
+     lini/nomi propri (resta solo il nome della metropoli, la piu' popolosa). */
+  const RAGGIO_METRO_KM = 15;
+
+  /* tutte le voci dal dataset, pronte ma non ancora "accettate" */
+  const voci = [];
   for (const ft of gj.features) {
     const p = ft.properties;
-    const id = hashId(p.name, p.latitude, p.longitude);
-    if (stato.cittaById.has(id)) continue;
     const key = trovaKeyCitta(p);
     if (!key) continue;
-    const c = {
-      id,
+    voci.push({
+      id: hashId(p.name, p.latitude, p.longitude),
       nome: p.name || p.nameascii || '?',
       lat: Number(p.latitude),
       lon: Number(p.longitude),
       pop: Number(p.pop_max) || 0,
       cap: Number(p.adm0cap) === 1,
       key
-    };
-    stato.cittaById.set(id, c);
-    if (!stato.cittaPerNazione.has(key)) stato.cittaPerNazione.set(key, []);
-    stato.cittaPerNazione.get(key).push(c);
+    });
+  }
+
+  /* le elaboriamo dalla piu' popolosa: la prima di una zona diventa la METRO-
+     POLI, le piu' piccole entro il raggio sono "quartieri" e vengono scartate */
+  const byPop = voci.slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
+  const metropoli = [];
+  const assorbito = new Map();        // idQuartiere -> metropoli che lo contiene
+  const cosLat = Math.cos((voci[0] ? voci[0].lat : 0) * Math.PI / 180);
+  const dLatMax = RAGGIO_METRO_KM / 111;
+  const dLonMax = dLatMax / Math.max(0.3, Math.abs(cosLat));
+  /* griglia per una ricerca veloce del vicino (evita O(n^k) su 79k voci) */
+  const cella = (mlat, mlon) => Math.floor(mlat / dLatMax) * 10000 + Math.floor(mlon / dLonMax);
+  const griglia = new Map();          // cella -> [metropoli]
+  for (const c of byPop) {
+    let dentro = false;
+    const clat = Math.floor(c.lat / dLatMax), clon = Math.floor(c.lon / dLonMax);
+    /* controlla le 9 celle adiacenti */
+    for (let i = -1; i <= 1 && !dentro; i++) {
+      for (let j = -1; j <= 1 && !dentro; j++) {
+        const lista = griglia.get((clat + i) * 10000 + (clon + j));
+        if (!lista) continue;
+        for (const m of lista) {
+          const dLat = Math.abs(c.lat - m.lat);
+          const dLon = (c.lon - m.lon) * cosLat;
+          if (Math.hypot(dLat, dLon) * 111 <= RAGGIO_METRO_KM) {
+            dentro = true; assorbito.set(c.id, m.id); break;
+          }
+        }
+      }
+    }
+    if (!dentro) {
+      metropoli.push(c);
+      const k = clat * 10000 + clon;
+      if (!griglia.has(k)) griglia.set(k, []);
+      griglia.get(k).push(c);
+    }
+  }
+
+  /* ora salviamo solo le metropoli come punti/citta' */
+  for (const c of metropoli) {
+    if (stato.cittaById.has(c.id)) continue;
+    stato.cittaById.set(c.id, c);
+    if (!stato.cittaPerNazione.has(c.key)) stato.cittaPerNazione.set(c.key, []);
+    stato.cittaPerNazione.get(c.key).push(c);
   }
   stato.pronte = true;
+
+  /* visite e casa gia' salvate: se si riferivano a un "quartiere" ora assorbito,
+     le reindirizziamo alla metropoli, cosi' restano visibili col nome giusto */
+  if (assorbito.size) {
+    const rimappa = (id) => assorbito.get(id) || id;
+    if (stato.casaCitta) stato.casaCitta.id = rimappa(stato.casaCitta.id);
+    if (stato.visitateCitta) {
+      const nuovo = new Set();
+      for (const id of stato.visitateCitta) nuovo.add(rimappa(id));
+      stato.visitateCitta = nuovo;
+    }
+  }
   /* pool mondiale: le ~30000 città più popolose (o tutte quelle sopra 3000 ab),
      per la vista globale veloce — più ampio del prima per ridurre le "zone vuote" */
   mondoCitta = [...stato.cittaById.values()]
