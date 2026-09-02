@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.9';
+const APP_VER = 'v1.20.10';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -697,14 +697,30 @@ function initGlobo(feats) {
       const pov = this.pointOfView();
       const cLon = pov ? pov.lon : 0;
       const cLat = pov ? pov.lat : 0;
+      const alt = pov && pov.altitude != null ? pov.altitude : 2.2;
+      /* cache: riutilizza il risultato finché non ci si sposta o si cambia
+         reggime di zoom, evitando di riordinare 55k città ad ogni movimento */
+      if (this._cittaCache &&
+          Math.abs(this._cittaCache.lon - cLon) < 1.5 &&
+          Math.abs(this._cittaCache.lat - cLat) < 1.5 &&
+          this._cittaCache.alt === (alt > 0.4)) {
+        return this._cittaCache.lista;
+      }
       const out = [];
       for (const c of mondoCitta) {
         const dLon = Math.min(Math.abs(c.lon - cLon), 360 - Math.abs(c.lon - cLon));
         const dLat = c.lat - cLat;
-        out.push({ c, d: dLat * dLat + dLon * dLon });
+        out.push({ c, d: dLat * dLat + dLon * dLon, pop: c.pop || 0 });
       }
-      out.sort((a, b) => a.d - b.d);
-      return out.map(o => o.c).slice(0, 6000);
+      /* Da lontano e a vista continentale/regionale: ordino per popolazione -> le
+         città più grandi di TUTTO il globo, così nessuna regione/periferia resta
+         vuota (ogni continente ha le sue grandi). Da molto vicino: ordino per
+         vicinanza al centro -> la zona guardata si riempie fino alle piccole. */
+      if (alt > 0.4) out.sort((a, b) => b.pop - a.pop);
+      else out.sort((a, b) => a.d - b.d);
+      const lista = out.map(o => o.c).slice(0, 6000);
+      this._cittaCache = { lon: cLon, lat: cLat, alt: alt > 0.4, lista };
+      return lista;
     }
   };
 }
@@ -883,7 +899,7 @@ function costruisciCittaDa(gj) {
      area. Raggruppiamo per prossimita': le voci vicine a una citta piu' popolosa
      vengono considerate parte della stessa metropoli e NON mostrate come pal-
      lini/nomi propri (resta solo il nome della metropoli, la piu' popolosa). */
-  const RAGGIO_METRO_KM = 15;
+  const RAGGIO_METRO_KM = 8;
 
   /* tutte le voci dal dataset, pronte ma non ancora "accettate" */
   const voci = [];
@@ -958,12 +974,12 @@ function costruisciCittaDa(gj) {
       stato.visitateCitta = nuovo;
     }
   }
-  /* pool mondiale: le ~30000 città più popolose (o tutte quelle sopra 3000 ab),
-     per la vista globale veloce — più ampio del prima per ridurre le "zone vuote" */
+  /* pool mondiale: TUTTE le città (dopo la fusione in metropoli), così anche
+     le piccole (es. Porto Cesareo) compaiono a zoom profondo. Nessun tetto:
+     si riduce con la soglia di popolazione negli scaglioni. */
   mondoCitta = [...stato.cittaById.values()]
-    .filter(c => (c.pop || 0) >= 3000)
-    .sort((a, b) => (b.pop || 0) - (a.pop || 0))
-    .slice(0, 30000);
+    .filter(c => (c.pop || 0) >= 800)
+    .sort((a, b) => (b.pop || 0) - (a.pop || 0));
   if (stato.selezionata) renderPannello();
   else aggiornaPunti();
 }
