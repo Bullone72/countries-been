@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.4';
+const APP_VER = 'v1.20.5';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -409,11 +409,9 @@ function initGlobo(feats) {
   function disegnaNomi() {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    /* Nazione selezionata: disegno il nome di OGNI città (l'utente vuole
-       vedere a cosa corrisponde ogni pallino). Senza selezione, su tutto
-       il globo, uso l'anti-accavallamento per non riempire lo schermo.
-       Le etichette sono già filtrate da etichetteVisibili() (da lontano
-       restano solo le tue città visitate/casa, poche). */
+    /* Nazione selezionata: disegno il nome di OGNI città (senza anti-accavallamento,
+       l'utente le vuole vedere tutte). Vista globale: uso l'anti-accavallamento
+       per non riempire lo schermo quando ci sono tanti pallini. */
     const occupati = [];
     const collida = (r) => occupati.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
     for (const e of etichette) {
@@ -717,8 +715,13 @@ function liveAltitudine() {
 }
 
 /* distanza (alt) oltre la quale NON compaiono le città da selezionare:
-   molto più "dentro" lo zoom rispetto a prima, per non riempire lo schermo */
-const GATE_CITTA = 0.06;
+   "zoom molto vicino": le città della vista globale appaiono solo quando
+   ti avvicini abbastanza, così niente caos da lontano. L'utente regola. */
+const GATE_CITTA = 0.15;
+
+/* le città visitate + la casa compaiono avvicinandosi (non sempre visibili):
+   soglia un po' più "in fondo" della v1.20.2 (che era 0.7), per gradi si regola */
+const GATE_VISITATE = 0.55;
 
 /* soglia di popolazione per la comparsa progressiva delle città con lo zoom:
    da lontano (alt alto) solo le città più grandi, avvicinandosi (alt basso)
@@ -874,18 +877,6 @@ function puntiVisibili() {
   const mappa = new Map();
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
   const alt = liveAltitudine();
-
-  /* citta visitate + casa: SEMPRE visibili, a qualunque distanza,
-     così il tuo "taccuino" di città segnate resta sempre sotto gli occhi */
-  if (stato.visitateCitta.size || stato.casaCitta) {
-    for (const id of stato.visitateCitta) {
-      push(stato.cittaById.get(id) || stato.cacheCitta[id]);
-    }
-    if (stato.casaCitta) {
-      push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
-    }
-  }
-
   /* se una nazione e selezionata mostriamo TUTTE le sue citta (toccabili subito).
      Nessuna soglia di popolazione: appaiono tutti i pallini della nazione,
      così anche le più piccole sono visibili e toccabili. */
@@ -897,79 +888,62 @@ function puntiVisibili() {
     return Array.from(mappa.values());
   }
 
-  /* NESSUNA nazione selezionata: guardiamo tutto il globo.
-     Da lontananza MASSIMA (nessuno zoom) non si vede nulla.
-     Appena si comincia a zoomare emergono subito le capitali e le città
-     principali, e man mano che ti avvicini compaiono sempre più città
-     (soglia di popolazione scende). Niente "vuoti": il mondo è pieno. */
-  if (alt != null && alt >= 1.1) {
-    /* da lontananza massima: si vedono SOLO le tue città visitate + la casa,
-       così non perdi mai di vista quello che hai segnato, ma il resto del
-       mondo resta pulito finché non zoome */
-    return Array.from(mappa.values());
+  /* citta visitate + casa: NON sempre visibili (l'utente non li vuole sempre).
+     Compaiono avvicinandosi, sotto GATE_VISITATE. */
+  if (stato.visitateCitta.size || stato.casaCitta) {
+    if (alt != null && alt < GATE_VISITATE) {
+      for (const id of stato.visitateCitta) {
+        push(stato.cittaById.get(id) || stato.cacheCitta[id]);
+      }
+      if (stato.casaCitta) {
+        push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
+      }
+    }
   }
 
+  /* NESSUNA nazione selezionata, vista globale:
+     i pallini delle città compaiono SOLO a zoom molto vicino (sotto GATE_CITTA),
+     e via via emergono sempre più città (soglia di popolazione scende).
+     Ogni pallino qui mostrato avrà il suo nome (etichette dagli stessi punti). */
+  if (alt != null && alt >= GATE_CITTA) return Array.from(mappa.values());
+
   const soglia = sogliaPopDaAlt(alt);
+  const capTot = alt < 0.08 ? 3000 : 1200;
 
-  /* da lontano: capitali + città principali di ogni nazione (sempre visibili),
-     così anche a metà zoom ci sono pallini ovunque, non solo quando sei sotto 0.7 */
-  const capTot = alt < 0.25 ? 3500 : (alt < 0.5 ? 2000 : (alt < 0.9 ? 1000 : 450));
-
-  /* tutte le città a schermo, ordinate per importanza, sopra la soglia */
   const daMostrare = (globo2d ? globo2d.cittaPerZoom() : [])
     .filter(c => c && (c.pop || 0) >= soglia)
     .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
     .slice(0, capTot);
   daMostrare.forEach(c => push(c));
 
-  /* la nazione centrale in primissimo piano: tutte le sue città sopra la soglia */
-  const centro = nazioneAlCentro();
-  if (centro) {
-    (stato.cittaPerNazione.get(centro) || [])
-      .filter(c => (c.pop || 0) >= soglia)
-      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .forEach(c => push(c));
-  }
-
   return Array.from(mappa.values());
 }
 
-/* nomi delle città: compaiono INSIEME ai pallini, non con soglia separata.
-   I pallini sono già filtrati da puntiVisibili() per popolazione e zoom,
-   quindi i nomi seguono la stessa logica: se vedi il pallino, vedi il nome */
+/* nomi delle città: COMPAIONO INSIEME AI PALLINI. Ogni pallino visibile ha
+   il suo nome (le etichette derivano dagli stessi punti mostrati), quindi
+   se vedi un pallino vedi il nome, e non ci sono nomi senza pallino. */
 function etichetteVisibili() {
-  const alt = liveAltitudine();
+  /* NOMI DERIVATI DAGLI STESSI PALLINI (currentPoints): ogni pallino mostrato
+   ha sempre il suo nome. I pallini sono già filtrati (zoom, soglia pop,
+   nazione selezionata): quindi anche i nomi seguono e compaiono SOLO
+   quando compaiono i pallini (zoom vicino), mai da lontano. */
+  if (!globo2d) return [];
+  const attuali = globo2d.currentPoints() || [];
   const elenco = [];
   const viste = new Set(stato.visitateCitta);
-  const visite = [...viste].map(id =>
-    stato.cittaById.get(id) || stato.cacheCitta[id]).filter(Boolean);
-  for (const c of visite) {
-    elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: c.id === (stato.casaCitta && stato.casaCitta.id), vis: true, cap: !!c.cap });
-  }
-  /* casa: sempre presente, con le coordinate salvate (così compare anche il nome) */
-  if (stato.casaCitta) {
-    if (!viste.has(stato.casaCitta.id)) {
-      const casa = { id: stato.casaCitta.id };
-      elenco.push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, alt: altPunto(casa) + 0.01, casa: true, vis: true });
-    }
-  }
-  /* da lontananza massima: solo i nomi delle tue città visitate/casa */
-  if (alt == null || alt >= 1.1) return elenco;
-  /* nomi per TUTTE le città attualmente visibili come punti:
-     currentPoints() restituisce i punti di puntiVisibili(), che include
-     le città della nazione selezionata, quelle per popolazione, ecc.
-     I nomi compaiono sempre col pallino corrispondente —
-     se una nazione è selezionata, ogni pallino ha il suo nome (niente
-     anti-accavallamento che li nasconda: l'utente li vuole vedere). */
-  if (globo2d) {
-    const attuali = globo2d.currentPoints() || [];
-    const extra = attuali
-      .filter(c => c && !viste.has(c.id) && !(stato.casaCitta && c.id === stato.casaCitta.id))
-      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .slice(0, 3000);
-    for (const c of extra) {
-      elenco.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, alt: altPunto(c) + 0.01, casa: false, vis: false, cap: !!c.cap });
-    }
+  const ordinate = attuali.slice()
+    .sort((a, b) =>
+      ((b.casa ? 1 : 0) - (a.casa ? 1 : 0)) ||
+      ((b.cap ? 1 : 0) - (a.cap ? 1 : 0)) ||
+      ((viste.has(b.id) ? 1 : 0) - (viste.has(a.id) ? 1 : 0)) ||
+      ((b.pop || 0) - (a.pop || 0)));
+  for (const c of ordinate) {
+    const casa = !!(stato.casaCitta && c && c.id === stato.casaCitta.id);
+    elenco.push({
+      id: c.id, nome: c.nome, lat: c.lat, lon: c.lon,
+      alt: altPunto(c) + 0.01,
+      casa, vis: viste.has(c.id), cap: !!c.cap
+    });
   }
   return elenco;
 }
