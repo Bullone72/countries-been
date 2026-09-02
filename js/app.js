@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.7';
+const APP_VER = 'v1.20.8';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -296,7 +296,7 @@ function initGlobo(feats) {
     autoRotateSpeed: 0,
     enableDamping: true,
     dampingFactor: 0.3,
-    rotateSpeed: 0.5,
+    rotateSpeed: 0.72,
     zoomSpeed: 0.6
   };
 
@@ -409,9 +409,14 @@ function initGlobo(feats) {
   function disegnaNomi() {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    /* Nazione selezionata: disegno il nome di OGNI città (senza anti-accavallamento,
-       l'utente le vuole vedere tutte). Vista globale: uso l'anti-accavallamento
-       per non riempire lo schermo quando ci sono tanti pallini. */
+    /* Nazione selezionata, o zoom molto profondo: disegno il nome di OGNI
+       città (senza anti-accavallamento). L'utente a zoom massimo vuole poter
+       leggere i nomi anche dei pallini senza selezionare. Vista globale da
+       lontano: anti-accavallamento per non riempire lo schermo.
+       A zoom profondo l'area visibile è piccola -> i pallini sono pochi,
+       quindi possiamo disegnare tutti i nomi in modo leggibile. */
+    const vicino = vista.alt < 0.06 && !stato.selezionata;
+    const usaCollision = !stato.selezionata && !vicino;
     const occupati = [];
     const collida = (r) => occupati.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
     for (const e of etichette) {
@@ -422,7 +427,7 @@ function initGlobo(feats) {
       ctx.font = '600 ' + fz + 'px system-ui';
       const larg = ctx.measureText(e.nome).width;
       const x0 = p[0] + 4, y0 = p[1] - 8, x1 = x0 + larg + 8, y1 = y0 + (cap ? 18 : 16);
-      if (!stato.selezionata && collida([x0, y0, x1, y1])) continue;
+      if (usaCollision && collida([x0, y0, x1, y1])) continue;
       occupati.push([x0, y0, x1, y1]);
       ctx.fillStyle = 'rgba(8,14,32,0.82)';
       roundRect(x0, y0, x1 - x0, y1 - y0, 3);
@@ -604,7 +609,7 @@ function initGlobo(feats) {
     daRidisegnare = true;
   }, { passive: false });
 
-  const MIN_ALT = 0.01;
+  const MIN_ALT = 0.004;
   const MAX_ALT = 2.7;
   const SOGLIA_NOMI = 0.55;
   const scaleFont = Math.max(9, Math.min(13, scalaAttuale() * 0.018));
@@ -730,15 +735,19 @@ const GATE_VISITATE = 0.10;
    scaglione (indice) corrisponde una soglia di popolazione. Più ci si avvicina
    (indice basso/tardi) più la soglia scende e emergono più città. */
 const SOGLIA_POP_SCAGLIONE = [
-  0,            // indice 0: tutte (alt <= 0.045)
-  4000,         // ~0.08
-  12000,        // ~0.13
-  25000,        // ~0.20
-  50000,        // ~0.32
-  90000,        // ~0.55
-  180000,       // ~0.9
-  400000,       // ~1.5
-  9000000       // molto lontano
+  0,            // sc0  (~0.005): poche città, zona minuscola
+  0,            // sc1  (~0.008)
+  0,            // sc2  (~0.012)
+  0,            // sc3  (~0.020)
+  200,          // sc4  (~0.035)
+  1500,         // sc5  (~0.060)
+  4000,         // sc6  (~0.10)
+  12000,        // sc7  (~0.16)
+  25000,        // sc8  (~0.26)
+  50000,        // sc9  (~0.45)
+  120000,       // sc10 (~0.8)
+  300000,       // sc11 (~1.5)
+  9000000       // sc12 (molto lontano)
 ];
 
 function scaglioneDi(alt) {
@@ -759,15 +768,19 @@ const NG_CITTA = '__citta__';
    all'altro, non ad ogni pixel di zoom. Così la visualizzazione è STABILE,
    senza flicker/ricreazione continua mentre ti avvicini o allontani. */
 const SOGLIE_ZOOM = [
-  0.045,      // alt sotto: tutte le città (soglia minima)
-  0.08,
-  0.13,
-  0.20,
-  0.32,
-  0.55,
-  0.9,
-  1.5,
-  2.7         // alt sopra: quasi nessuna città
+  0.005,      // sc0: zoom assoluto max -> pochissimi pallini centrali
+  0.008,      // sc1
+  0.012,      // sc2
+  0.020,      // sc3
+  0.035,      // sc4
+  0.060,      // sc5
+  0.10,       // sc6
+  0.16,       // sc7
+  0.26,       // sc8
+  0.45,       // sc9
+  0.8,        // sc10
+  1.5,        // sc11
+  2.7         // sc12: quasi nessuna città
 ];
 
 function aggiornaEtichetteZoometta() {
@@ -942,10 +955,16 @@ function puntiVisibili() {
   if (alt != null && alt >= GATE_CITTA) return Array.from(mappa.values());
 
   const soglia = sogliaPopDaAlt(alt);     // quantizzata per scaglione
-  const sc = scaglioneDi(alt);
   /* cap in base allo scaglione: vicino tante città, lontano poche (stabile,
      senza salti bruschi in mezzo allo zoom) */
-  const capTot = sc <= 0 ? 4000 : (sc <= 1 ? 3000 : (sc <= 2 ? 2000 : 1200));
+  const sc = scaglioneDi(alt);
+  /* cap in base allo scaglione: a zoom molto profondo (sc 0..2) la zona è
+     piccola quindi mostriamo pochi pallini centrali cosi i SOLI nomi si
+     leggono; a scaglioni medi più città; da lontano poche. Stabile. */
+  const capTot =
+    sc <= 0 ? 150 : (sc <= 1 ? 260 : (sc <= 2 ? 420 : (sc <= 3 ? 700 :
+    (sc <= 4 ? 1100 : (sc <= 5 ? 1800 : (sc <= 6 ? 2800 :
+    (sc <= 7 ? 3400 : (sc <= 9 ? 3200 : 2000))))))));
 
   const daMostrare = (globo2d ? globo2d.cittaPerZoom() : [])
     .filter(c => c && (c.pop || 0) >= soglia)
@@ -954,13 +973,17 @@ function puntiVisibili() {
   daMostrare.forEach(c => push(c));
 
   /* la nazione centrale in primo piano: TUTTE le sue città sopra la soglia,
-     per riempire la zona che stai guardando e non lasciare buchi */
-  const centro = nazioneAlCentro();
-  if (centro) {
-    (stato.cittaPerNazione.get(centro) || [])
-      .filter(c => (c.pop || 0) >= soglia)
-      .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
-      .forEach(c => push(c));
+     per riempire la zona che stai guardando e non lasciare buchi. Solo per
+     scaglioni "medi" (zoom profondo ma non minimo): a zoom massimo (sc 0..2)
+     basta il pool + i nomi, che si leggono perché la zona è piccola. */
+  if (sc >= 1 && sc <= 8) {
+    const centro = nazioneAlCentro();
+    if (centro) {
+      (stato.cittaPerNazione.get(centro) || [])
+        .filter(c => (c.pop || 0) >= soglia)
+        .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
+        .forEach(c => push(c));
+    }
   }
 
   return Array.from(mappa.values());
