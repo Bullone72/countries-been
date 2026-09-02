@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.10';
+const APP_VER = 'v1.20.11';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -291,6 +291,7 @@ function initGlobo(feats) {
 
   /* Stato di vista: lon/lat del centro + fattore di zoom */
   const vista = { lon: 12, lat: 25, alt: 2.2 };
+  lastAggLon = vista.lon; lastAggLat = vista.lat;
   const controlli = {
     autoRotate: false,           // il globo si muove SOLO se lo muovi tu
     autoRotateSpeed: 0,
@@ -470,7 +471,7 @@ function initGlobo(feats) {
   }
 
   function cittaSotto(x, y) {
-    let miglior = null, miglioreD = 18;
+    let miglior = null, miglioreD = 24;
     for (const c of punti) {
       const p = puntoSchermo(c);
       if (!p) continue;
@@ -480,13 +481,14 @@ function initGlobo(feats) {
     }
     if (miglior) return miglior;
     /* toccando il NOME (disegnato accanto al pallino) si deve selezionare
-       la città come tocchi il pallino, non aprire la nazione */
+       la città come tocchi il pallino: il box del nome è reso più "generoso"
+       così è facile colpirli col dito (soprattutto a zoom profondo) */
     ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
     for (const e of etichette) {
       const p = puntoSchermo(e);
       if (!p) continue;
       const larg = ctx.measureText(e.nome).width;
-      const x0 = p[0] + 4, y0 = p[1] - 8, largB = larg + 8, altB = e.cap ? 18 : 16;
+      const x0 = p[0] + 2, y0 = p[1] - 12, largB = larg + 12, altB = e.cap ? 24 : 22;
       if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
         const c = stato.cittaById.get(e.id);
         if (c) return c;
@@ -518,15 +520,19 @@ function initGlobo(feats) {
       const dy = e.clientY - ultimoY;
       /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
       const gradiPerPx = 360 / (scalaAttuale() * Math.PI * 2);
-      vista.lon -= dx * gradiPerPx * controlli.rotateSpeed;
-      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * gradiPerPx * controlli.rotateSpeed));
+      /* a zoom molto profondo la scala è enorme: lo stesso drag farebbe
+         volare il globo lontano. Attenua la rotazione quanto più sei vicino. */
+      const attenuazione = Math.max(0.25, Math.min(1, Math.sqrt(vista.alt / 0.5)));
+      const rot = gradiPerPx * controlli.rotateSpeed * attenuazione;
+      vista.lon -= dx * rot;
+      vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * rot));
       /* normalizza lon */
       vista.lon = ((vista.lon % 360) + 360) % 360;
       /* inerzia */
       const ora = performance.now();
       const dt = Math.max(1, ora - lastTime);
-      velX = dx * gradiPerPx * controlli.rotateSpeed * (dt / 16);
-      velY = dy * gradiPerPx * controlli.rotateSpeed * (dt / 16);
+      velX = dx * rot * (dt / 16);
+      velY = dy * rot * (dt / 16);
       lastTime = ora;
       ultimoX = e.clientX; ultimoY = e.clientY;
     } else if (dita.size === 2) {
@@ -563,14 +569,20 @@ function initGlobo(feats) {
     ultimoEventoClick = null;
   }
 
-  let downX = 0, downY = 0, downTime = 0, spostato = false;
+  let downX = 0, downY = 0, downTime = 0, spostato = false, toccoSuBersaglio = false;
 
   canvas.addEventListener('pointerdown', e => {
     downX = e.clientX; downY = e.clientY; downTime = Date.now(); spostato = false;
+    /* se il tocco parte SU un pallino o un nome, lo trattiamo come "selezione":
+       NIENTE rotazione/pan per piccoli movimenti (altrimenti si schizza via) */
+    toccoSuBersaglio = dita.size === 0 && !!cittaSotto(e.clientX, e.clientY);
     pointerGiù(e);
   });
   canvas.addEventListener('pointermove', e => {
-    if (dita.has(e.pointerId) && Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 6) spostato = true;
+    /* soglia di trascinamento: più alta quando il tocco era su un bersaglio,
+       così un tocco non perfettamente fermo non ruota il globo */
+    const soglia = toccoSuBersaglio ? 26 : 12;
+    if (dita.has(e.pointerId) && Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > soglia) spostato = true;
     pointerMovi(e);
   });
   canvas.addEventListener('pointerup', e => {
@@ -631,6 +643,15 @@ function initGlobo(feats) {
       inMovimento = true;
     }
     aggiornaEtichetteZoometta();
+    /* Quando il globo NON sta trascinando (o è in inerzia) e il centro si è
+       spostato in una nuova zona, ricalcoliamo i punti per quel centro:
+       così le città seguono la zona guardata e non restano zone vuote
+       finché non si rifà lo zoom. */
+    if (!trascinando && dita.size === 0 &&
+        (Math.abs(vista.lon - lastAggLon) + Math.abs(vista.lat - lastAggLat)) > 1.5) {
+      lastAggLon = vista.lon; lastAggLat = vista.lat;
+      aggiornaPunti();
+    }
     /* disegniamo solo se serve (evita consumo inutile quando il globo è fermo) */
     if (inMovimento || trascinando || dita.size > 0 || daRidisegnare) {
       disegna();
@@ -728,6 +749,8 @@ function initGlobo(feats) {
 let globo2d = null;
 let ultimaSogliaZoom = null;
 let ultimaSogliaCitta = null;
+/* per ricalcolare i punti quando il globo si ferma su una nuova zona */
+let lastAggLon = null, lastAggLat = null;
 /* pool mondiale di città (limitato alle più popolose) per la ricerca veloce
    nelle vicinanze della vista corrente, senza riscanare tutte le 79k città */
 let mondoCitta = [];
