@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.22.0';
+const APP_VER = 'v1.23.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -30,7 +30,8 @@ const COL = {
   cittaNo: '#000000',                     // nero: città non ancora visitata
   cittaCap: '#ffd166',                  // oro: capitale
   cittaCasa: '#c084fc',                   // viola vivo: città dove vivo
-  cittaPercorso: '#f97316'                // arancio vivo: tappa del percorso itinerante
+  cittaPercorso: '#f97316',               // arancio vivo: tappa del percorso itinerante
+  parco: '#4ade80'                        // verde vivo: parco nazionale
 };
 
 const stato = {
@@ -51,6 +52,62 @@ const stato = {
   query: '',
   pronte: false
 };
+
+/* Parchi nazionali USA: i principali e più belli, come punti selezionabili
+   (specie per gli itinerari nella vista Percorsi). key = 'c840' (USA). */
+const PARCHI_USA = [
+  { nome: 'Yellowstone', lat: 44.59, lon: -110.50 },
+  { nome: 'Grand Teton', lat: 43.80, lon: -110.70 },
+  { nome: 'Yosemite', lat: 37.85, lon: -119.55 },
+  { nome: 'Sequoia', lat: 36.55, lon: -118.75 },
+  { nome: 'Kings Canyon', lat: 36.80, lon: -118.55 },
+  { nome: 'Death Valley', lat: 36.51, lon: -117.13 },
+  { nome: 'Joshua Tree', lat: 33.90, lon: -115.90 },
+  { nome: 'Zion', lat: 37.30, lon: -113.05 },
+  { nome: 'Bryce Canyon', lat: 37.60, lon: -112.20 },
+  { nome: 'Arches', lat: 38.73, lon: -109.60 },
+  { nome: 'Canyonlands', lat: 38.33, lon: -109.88 },
+  { nome: 'Capitol Reef', lat: 38.20, lon: -111.17 },
+  { nome: 'Grand Canyon', lat: 36.11, lon: -112.11 },
+  { nome: 'Petrified Forest', lat: 35.07, lon: -109.78 },
+  { nome: 'Saguaro', lat: 32.25, lon: -110.50 },
+  { nome: 'Rocky Mountain', lat: 40.34, lon: -105.68 },
+  { nome: 'Mesa Verde', lat: 37.23, lon: -108.46 },
+  { nome: 'Great Sand Dunes', lat: 37.73, lon: -105.51 },
+  { nome: 'Glacier', lat: 48.76, lon: -113.79 },
+  { nome: 'Mount Rainier', lat: 46.85, lon: -121.76 },
+  { nome: 'Olympic', lat: 47.80, lon: -123.60 },
+  { nome: 'North Cascades', lat: 48.77, lon: -121.30 },
+  { nome: 'Crater Lake', lat: 42.87, lon: -122.17 },
+  { nome: 'Redwood', lat: 41.31, lon: -124.00 },
+  { nome: 'Lassen Volcanic', lat: 40.49, lon: -121.51 },
+  { nome: 'Channel Islands', lat: 34.01, lon: -119.80 },
+  { nome: 'Pinnacles', lat: 36.49, lon: -121.18 },
+  { nome: 'Badlands', lat: 43.86, lon: -102.34 },
+  { nome: 'Wind Cave', lat: 43.57, lon: -103.44 },
+  { nome: 'Theodore Roosevelt', lat: 46.98, lon: -103.45 },
+  { nome: 'Big Bend', lat: 29.25, lon: -103.25 },
+  { nome: 'Guadalupe Mountains', lat: 31.92, lon: -104.86 },
+  { nome: 'Carlsbad Caverns', lat: 32.15, lon: -104.56 },
+  { nome: 'White Sands', lat: 32.78, lon: -106.17 },
+  { nome: 'Great Smoky Mountains', lat: 35.65, lon: -83.51 },
+  { nome: 'Shenandoah', lat: 38.53, lon: -78.35 },
+  { nome: 'Acadia', lat: 44.34, lon: -68.27 },
+  { nome: 'Everglades', lat: 25.29, lon: -80.90 },
+  { nome: 'Dry Tortugas', lat: 24.63, lon: -82.87 },
+  { nome: 'Isle Royale', lat: 48.00, lon: -88.83 },
+  { nome: 'Voyageurs', lat: 48.48, lon: -92.84 },
+  { nome: 'Cuyahoga Valley', lat: 41.24, lon: -81.55 },
+  { nome: 'Mammoth Cave', lat: 37.19, lon: -86.10 },
+  { nome: 'Haleakalā', lat: 20.71, lon: -156.25 },
+  { nome: 'Hawaii Volcanoes', lat: 19.41, lon: -155.28 },
+  { nome: 'Denali', lat: 63.07, lon: -151.00 },
+  { nome: 'Kenai Fjords', lat: 59.81, lon: -150.37 },
+  { nome: 'Glacier Bay', lat: 58.66, lon: -136.16 },
+  { nome: 'Wrangell-St. Elias', lat: 61.00, lon: -142.00 }
+];
+PARCHI_USA.forEach((p, i) => { p.id = 'parco:' + (i + 1); p.key = 'c840'; p.pop = 0; });
+const PARCHI_BY_ID = new Map(PARCHI_USA.map(p => [p.id, p]));
 
 let indiceAlias = new Map(); // alias normalizzato/codice -> meta nazione
 let indiceCcn3 = new Map();  // codice numerico ISO (ccn3) -> meta nazione
@@ -274,36 +331,44 @@ function cittaAccesa(c) {
 
 function colorePunto(c) {
   if (eCasa(c.id)) return COL.cittaCasa;
+  if (stato.modalita === 'percorsi' && eTappaPercorso(c.id)) return COL.cittaPercorso;
+  if (eParco(c.id)) return COL.parco;
   if (c.cap) return COL.cittaCap;
-  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? COL.cittaPercorso : COL.cittaNo;
+  if (stato.modalita === 'percorsi') return COL.cittaNo;
   return stato.visitateCitta.has(c.id) ? COL.cittaVista : COL.cittaNo;
 }
 
 function altPunto(c) {
   if (eCasa(c.id)) return 0.04;
-  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? 0.035 : 0.008;
+  if (stato.modalita === 'percorsi' && eTappaPercorso(c.id)) return 0.035;
+  if (eParco(c.id)) return 0.03;
   if (stato.visitateCitta.has(c.id)) return 0.025;
   return 0.008;
 }
 
 function raggioPunto(c) {
   if (eCasa(c.id)) return 0.5;
-  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? 0.3 : 0.07;
+  if (stato.modalita === 'percorsi' && eTappaPercorso(c.id)) return 0.3;
+  if (eParco(c.id)) return 0.28;
   if (stato.visitateCitta.has(c.id)) return 0.22;
   return 0.07;
 }
 
+function eParco(id) {
+  return PARCHI_BY_ID.has(id);
+}
+
 function etichettaCitta(c) {
   const vis = cittaAccesa(c);
-  const pref = eCasa(c.id) ? '🏠 ' : '';
+  const pref = eCasa(c.id) ? '🏠 ' : (eParco(c.id) ? '' : '');
   const col = eCasa(c.id) ? '#c084fc' : (vis ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff2d2d') : '#93a4c8');
   const statoTesto = stato.modalita === 'percorsi'
     ? (vis ? '✓ Tappa del percorso' : 'Tocca per aggiungere al percorso')
-    : (vis ? '✓ Visitata' : 'Tocca per segnare');
+    : (vis ? '✓ Visitato' : 'Tocca per segnare');
   return `<div style="background:rgba(11,17,34,.92);padding:6px 10px;border-radius:8px;border:1px solid rgba(120,160,255,.35)">
-        <b>${pref}${esc(c.nome)}</b>${c.pop ? ` · ${formattaPop(c.pop)}` : ''}<br>
+        <b>${pref}${eParco(c.id) ? '🏞️ ' : ''}${esc(c.nome)}</b>${c.pop ? ` · ${formattaPop(c.pop)}` : ''}<br>
         <span style="font-size:11px;color:${col}">
-          ${eCasa(c.id) ? 'La tua città' : statoTesto}</span></div>`;
+          ${eCasa(c.id) ? 'La tua città' : eParco(c.id) ? 'Parco nazionale USA' : statoTesto}</span></div>`;
 }
 
 function initGlobo(feats) {
@@ -464,12 +529,13 @@ function initGlobo(feats) {
       const casa = eCasa(c.id);
       const acc = cittaAccesa(c);
       const cap = !casa && !!c.cap;
-      const peso = casa ? 4 : (cap ? 3 : (acc ? 2 : 1));
+      const parco = !casa && !cap && eParco(c.id);
+      const peso = casa ? 4 : (cap ? 3 : (parco ? 3 : (acc ? 2 : 1)));
       if (migliore && migliore.peso >= peso) continue;   // un altro più importante lo copre
       if (migliore) grid.delete(key(Math.floor(migliore.p[0] / passo), Math.floor(migliore.p[1] / passo)));
       if (!grid.has(key(cellaX, cellaY))) grid.set(key(cellaX, cellaY), []);
       grid.get(key(cellaX, cellaY)).push({ p, peso });
-      const r = casa ? 2.6 : (cap ? 2.0 : (acc ? 1.5 : 1.2));
+      const r = casa ? 2.6 : (cap ? 2.0 : (parco ? 2.2 : (acc ? 1.5 : 1.2)));
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
@@ -503,7 +569,8 @@ function initGlobo(feats) {
       roundRect(x0, y0, x1 - x0, y1 - y0, 3);
       ctx.fill();
       const accE = cittaAccesa(e);
-      ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (accE ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff6b6b') : '#5eead4'));
+      const colParco = eParco(e.id) && !accE;
+      ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (accE ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff6b6b') : (colParco ? '#4ade80' : '#5eead4')));
       ctx.fillText(e.nome, p[0] + 8, p[1]);
     }
   }
@@ -519,7 +586,7 @@ function initGlobo(feats) {
 
   /* ---------------- percorso itinerante ---------------- */
 
-  const SOGLIA_PERCORSO = 0.16;   /* vicinanza minima per far vedere il percorso (regione per regione) */
+  const SOGLIA_PERCORSO = 0.8;   /* il percorso è visibile anche abbastanza da lontano */
 
   function disegnaPercorso() {
     /* il percorso (linee dei viaggi) si vede SOLO nella vista Percorsi,
@@ -606,7 +673,7 @@ function initGlobo(feats) {
       const larg = ctx.measureText(e.nome).width;
       const x0 = p[0] + 2, y0 = p[1] - 12, largB = larg + 12, altB = e.cap ? 24 : 22;
       if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
-        const c = stato.cittaById.get(e.id);
+        const c = stato.cittaById.get(e.id) || PARCHI_BY_ID.get(e.id);
         if (c) return c;
       }
     }
@@ -684,6 +751,7 @@ function initGlobo(feats) {
     const c = cittaSotto(click.x, click.y);
     if (c) {
       if (stato.modalita === 'percorsi') toggleTappa(c);
+      else if (eParco(c.id)) toast('🏞️ ' + c.nome + ' (parco nazionale)');
       else toggleCitta(c.id);
       ultimoEventoClick = null;
       return;
@@ -723,12 +791,9 @@ function initGlobo(feats) {
         if (f0 && eMicrostato(f0)) { selezionaNazione(f0); return; }
         const c = cittaSotto(e.clientX, e.clientY);
         if (c) {
-          try {
-            if (stato.modalita === 'percorsi') toggleTappa(c);
-            else toggleCitta(c.id);
-          } catch (err) {
-            toast('⚠️ ERRORE: ' + err.message + ' | stack: ' + (err.stack || '').split('\n')[0], 6000);
-          }
+          if (stato.modalita === 'percorsi') toggleTappa(c);
+          else if (eParco(c.id)) toast('🏞️ ' + c.nome + ' (parco nazionale)');
+          else toggleCitta(c.id);
           return;
         }
         if (f0) selezionaNazione(f0);
@@ -899,6 +964,10 @@ function liveAltitudine() {
    "zoom molto vicino": le città della vista globale appaiono solo quando
    ti avvicini abbastanza, così niente caos da lontano. L'utente regola. */
 const GATE_CITTA = 0.6;
+
+/* i parchi nazionali del Nordamerica compaiono già da abbastanza lontano
+   (1.5): sono pochi e grossi, servono a pianificare i viaggi. */
+const GATE_PARCHI = 1.5;
 
 /* le città visitate + la casa compaiono SOLO molto vicini (zoom profondo):
    sotto questa altitudine (0.10). Prima non si vedono. L'utente l'ha scelto. */
@@ -1133,6 +1202,9 @@ function puntiVisibili() {
       .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
       .slice(0, 4000);
     lista.forEach(c => push(c));
+    if (stato.selezionata === 'c840') {
+      PARCHI_USA.forEach(p => push(p));
+    }
     return Array.from(mappa.values());
   }
 
@@ -1147,6 +1219,8 @@ function puntiVisibili() {
     if (stato.casaCitta) {
       push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
     }
+    /* tutti i parchi del Nordamerica, da qualsiasi zoom: servono a pianificare */
+    PARCHI_USA.forEach(p => push(p));
   }
 
   /* citta visitate + casa (solo vista Mappa): NON sempre visibili (l'utente
@@ -1160,6 +1234,13 @@ function puntiVisibili() {
         push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
       }
     }
+  }
+
+  /* PARCHI NAZIONALI (Nordamerica): compaiono da abbastanza lontano
+     (sotto GATE_PARCHI) come pallini verdi, così li vedi mentre pianifichi
+     i viaggi nel continente. In "percorsi" sono tappabili come tappe. */
+  if (alt != null && alt < GATE_PARCHI) {
+    PARCHI_USA.forEach(p => push(p));
   }
 
   /* NESSUNA nazione selezionata, vista globale:
@@ -1360,7 +1441,17 @@ function listaFiltrata() {
     return true;
   });
   const q = norma(stato.query);
-  const filtrata = q ? uniche.filter(c => norma(c.nome).includes(q)) : uniche;
+  let filtrata = q ? uniche.filter(c => norma(c.nome).includes(q)) : uniche.slice();
+  /* quando selezioni gli USA (c840), nella lista ci sono anche i parchi
+     nazionali: selezionabili (in percorsi) e tappabili dalla riga */
+  if (stato.selezionata === 'c840') {
+    if (q) {
+      const parchiFiltrati = PARCHI_USA.filter(p => norma(p.nome).includes(q));
+      if (parchiFiltrati.length) filtrata = filtrata.concat(parchiFiltrati);
+    } else {
+      filtrata.push(...PARCHI_USA);
+    }
+  }
   return { filtrata, totale: uniche.length };
 }
 
@@ -1493,9 +1584,9 @@ function renderListaCitta() {
         <button class="f-up" data-msg="${c.id}">⇡</button>
         <button class="f-down" data-msg="${c.id}">⇣</button>
       </span>` : '';
-      const label = inPercorsi ? (nTappa ? '#' + nTappa : formattaPop(c.pop)) : formattaPop(c.pop);
+      const label = inPercorsi ? (nTappa ? '#' + nTappa : (eParco(c.id) ? 'Parco' : formattaPop(c.pop))) : (eParco(c.id) ? 'Parco' : formattaPop(c.pop));
       html += `<div class="riga-citta ${vis ? (inPercorsi ? 'tappa' : 'visitata') : ''}" data-id="${c.id}">
-        <span class="pallino"></span>
+        <span class="pallino" ${eParco(c.id) ? 'style="background:#4ade80"' : ''}></span>
         <span class="info"><span class="nome">${esc(c.nome)}</span></span>
         ${frecce}
         <span class="pop">${label}</span>
@@ -1516,21 +1607,20 @@ function renderListaCitta() {
   el.innerHTML = html;
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => {
-      try {
-        if (inPercorsi) {
-          const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id];
-          if (c) {
-            const prima = !stato.percorsoTappe.some(t => t.id === c.id);
-            toggleTappa(c);
-            if (prima && globo2d && c.lat != null && c.lon != null) {
-              globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
-            }
+      if (inPercorsi) {
+        const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id] || PARCHI_BY_ID.get(r.dataset.id);
+        if (c) {
+          const prima = !stato.percorsoTappe.some(t => t.id === c.id);
+          toggleTappa(c);
+          if (prima && globo2d && c.lat != null && c.lon != null) {
+            globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
           }
-        } else {
-          toggleCitta(r.dataset.id, true);
         }
-      } catch (err) {
-        toast('⚠️ ERRORE: ' + err.message + ' | ' + (err.stack || '').split('\n')[0], 6000);
+      } else if (PARCHI_BY_ID.has(r.dataset.id)) {
+        const p = PARCHI_BY_ID.get(r.dataset.id);
+        toast('🏞️ ' + p.nome + ' (parco nazionale)');
+      } else {
+        toggleCitta(r.dataset.id, true);
       }
     }));
 
