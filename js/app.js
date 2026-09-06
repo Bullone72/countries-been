@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.24.1';
+const APP_VER = 'v1.24.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -427,8 +427,12 @@ function initGlobo(feats) {
   const path = d3.geoPath(proj, ctx);
 
   function scalaAttuale() {
+    /* mai negativa: un'altitudine fuori range (NaN o bassissima, es. subito
+       dopo una rotella di zoom o un'animazione brusca) non deve rompere il
+       render con raggi negativi/NaN */
+    const alt = Number.isFinite(vista.alt) ? Math.max(vista.alt, MIN_ALT) : MAX_ALT;
     const base = Math.min(W, H) / 2;
-    return base * (2.2 / vista.alt);
+    return Math.max(base, base * (2.2 / alt));
   }
 
   function aggiornaProiezione() {
@@ -905,7 +909,7 @@ function initGlobo(feats) {
           const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
           vista.lon = from.lon + (tgt.lng - from.lon) * ease;
           vista.lat = from.lat + (tgt.lat - from.lat) * ease;
-          vista.alt = from.alt + (tgt.altitude - from.alt) * ease;
+          vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, from.alt + (tgt.altitude - from.alt) * ease));
           daRidisegnare = true;
           if (t < 1) requestAnimationFrame(passo);
         };
@@ -913,7 +917,7 @@ function initGlobo(feats) {
       } else {
         vista.lon = tgt.lng != null ? tgt.lng : vista.lon;
         vista.lat = tgt.lat != null ? tgt.lat : vista.lat;
-        vista.alt = tgt.altitude != null ? tgt.altitude : vista.alt;
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, tgt.altitude != null ? tgt.altitude : vista.alt));
       }
       setTimeout(() => disegna(), 0);
       return this;
