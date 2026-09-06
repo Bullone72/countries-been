@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.24.2';
+const APP_VER = 'v1.24.3';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -682,13 +682,21 @@ function initGlobo(feats) {
       }
     }
     let miglior = null, miglioreD = raggioPunti;
+    /* i parchi si colpiscono pure fuori dal pallino: si tratta di zone grandi,
+       specie col dito (30px) */
+    let migliorParco = null, miglioreDParco = mouse ? raggioPunti : 30;
     for (const c of punti) {
       const p = puntoSchermo(c);
       if (!p) continue;
       const dx = p[0] - x, dy = p[1] - y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      if (d < miglioreD) { miglioreD = d; miglior = c; }
+      if (eParco(c.id)) {
+        if (d < miglioreDParco) { miglioreDParco = d; migliorParco = c; }
+      } else if (d < miglioreD) { miglioreD = d; miglior = c; }
     }
+    /* il parco vince sul pallino di una città solo se è più vicino (o col dito
+       le zone sono più generose) */
+    if (migliorParco && (!miglior || miglioreDParco <= miglioreD)) return migliorParco;
     if (miglior) return miglior;
     if (!mouse) {
       /* toccando il NOME (disegnato accanto al pallino) si deve selezionare
@@ -757,8 +765,8 @@ function initGlobo(feats) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (distanzaDita > 0 && d > 0) {
         const f = d / distanzaDita;
-        /* zoom proporzionale ma non troppo sensibile: entra in modo controllato */
-        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.2)));
+        /* zoom: esponente 1.6 = più reattivo al movimento delle dita */
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.6)));
       }
     }
   }
@@ -1001,10 +1009,6 @@ function liveAltitudine() {
    ti avvicini abbastanza, così niente caos da lontano. L'utente regola. */
 const GATE_CITTA = 0.6;
 
-/* i parchi nazionali del Nordamerica compaiono già da abbastanza lontano
-   (1.5): sono pochi e grossi, servono a pianificare i viaggi. */
-const GATE_PARCHI = 1.5;
-
 /* le città visitate + la casa compaiono SOLO molto vicini (zoom profondo):
    sotto questa altitudine (0.10). Prima non si vedono. L'utente l'ha scelto. */
 const GATE_VISITATE = 0.10;
@@ -1230,6 +1234,10 @@ function puntiVisibili() {
   const mappa = new Map();
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
   const alt = liveAltitudine();
+  /* i PARCHI nazionali USA sono SEMPRE nel pool (solo ~50 punti): visibili e
+     cliccabili da qualsiasi zoom, sia col dito sia col mouse, sia in mappa
+     (info) sia in percorsi (tappa). */
+  PARCHI_USA.forEach(p => push(p));
   /* se una nazione e selezionata mostriamo TUTTE le sue citta (toccabili subito).
      Nessuna soglia di popolazione: appaiono tutti i pallini della nazione,
      così anche le più piccole sono visibili e toccabili. */
@@ -1270,13 +1278,6 @@ function puntiVisibili() {
         push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
       }
     }
-  }
-
-  /* PARCHI NAZIONALI (Nordamerica): compaiono da abbastanza lontano
-     (sotto GATE_PARCHI) come pallini verdi, così li vedi mentre pianifichi
-     i viaggi nel continente. In "percorsi" sono tappabili come tappe. */
-  if (alt != null && alt < GATE_PARCHI) {
-    PARCHI_USA.forEach(p => push(p));
   }
 
   /* NESSUNA nazione selezionata, vista globale:
