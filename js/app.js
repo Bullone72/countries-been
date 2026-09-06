@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.23.0';
+const APP_VER = 'v1.24.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -653,8 +653,31 @@ function initGlobo(feats) {
     return null;
   }
 
-  function cittaSotto(x, y) {
-    let miglior = null, miglioreD = 24;
+  function cittaSotto(x, y, mouse) {
+    /* con il MOUSE la selezione deve essere precisa: prima le ETICHETTE
+       toccate dal puntatore (se clicchi sul NOME vuoi quella città, non il
+       pallino accanto), e con box stretti; poi i pallini con raggio minore.
+       Con il DITO: prima i pallini (raggio generoso 24px), poi le etichette
+       con box grandi (facili da colpire). */
+    const raggioPunti = mouse ? 9 : 24;
+    let migliorEtichetta = null, miglioreDEtichetta = Infinity;
+    if (mouse) {
+      ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+      for (const e of etichette) {
+        const p = puntoSchermo(e);
+        if (!p) continue;
+        const larg = ctx.measureText(e.nome).width;
+        const x0 = p[0] + 2, y0 = p[1] - 10, largB = larg + 6, altB = e.cap ? 20 : 18;
+        if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
+          const d = Math.abs((p[0] + 2 + larg / 2) - x) + Math.abs(p[1] - y);
+          if (d < miglioreDEtichetta) { miglioreDEtichetta = d; migliorEtichetta = e; }
+        }
+      }
+      if (migliorEtichetta) {
+        return stato.cittaById.get(migliorEtichetta.id) || PARCHI_BY_ID.get(migliorEtichetta.id) || null;
+      }
+    }
+    let miglior = null, miglioreD = raggioPunti;
     for (const c of punti) {
       const p = puntoSchermo(c);
       if (!p) continue;
@@ -663,18 +686,20 @@ function initGlobo(feats) {
       if (d < miglioreD) { miglioreD = d; miglior = c; }
     }
     if (miglior) return miglior;
-    /* toccando il NOME (disegnato accanto al pallino) si deve selezionare
-       la città come tocchi il pallino: il box del nome è reso più "generoso"
-       così è facile colpirli col dito (soprattutto a zoom profondo) */
-    ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
-    for (const e of etichette) {
-      const p = puntoSchermo(e);
-      if (!p) continue;
-      const larg = ctx.measureText(e.nome).width;
-      const x0 = p[0] + 2, y0 = p[1] - 12, largB = larg + 12, altB = e.cap ? 24 : 22;
-      if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
-        const c = stato.cittaById.get(e.id) || PARCHI_BY_ID.get(e.id);
-        if (c) return c;
+    if (!mouse) {
+      /* toccando il NOME (disegnato accanto al pallino) si deve selezionare
+         la città come tocchi il pallino: il box del nome è reso più "generoso"
+         così è facile colpirli col dito (soprattutto a zoom profondo) */
+      ctx.font = '500 ' + Math.round(scaleFont) + 'px system-ui';
+      for (const e of etichette) {
+        const p = puntoSchermo(e);
+        if (!p) continue;
+        const larg = ctx.measureText(e.nome).width;
+        const x0 = p[0] + 2, y0 = p[1] - 12, largB = larg + 12, altB = e.cap ? 24 : 22;
+        if (x >= x0 && x <= x0 + largB && y >= y0 && y <= y0 + altB) {
+          const c = stato.cittaById.get(e.id) || PARCHI_BY_ID.get(e.id);
+          if (c) return c;
+        }
       }
     }
     return null;
@@ -748,7 +773,7 @@ function initGlobo(feats) {
   function tap() {
     const click = ultimoEventoClick;
     if (!click) return;
-    const c = cittaSotto(click.x, click.y);
+    const c = cittaSotto(click.x, click.y, click.pointerType === 'mouse');
     if (c) {
       if (stato.modalita === 'percorsi') toggleTappa(c);
       else if (eParco(c.id)) toast('🏞️ ' + c.nome + ' (parco nazionale)');
@@ -768,13 +793,16 @@ function initGlobo(feats) {
     downX = e.clientX; downY = e.clientY; downTime = Date.now(); spostato = false;
     /* se il tocco parte SU un pallino o un nome, lo trattiamo come "selezione":
        NIENTE rotazione/pan per piccoli movimenti (altrimenti si schizza via) */
-    toccoSuBersaglio = dita.size === 0 && !!cittaSotto(e.clientX, e.clientY);
+    toccoSuBersaglio = dita.size === 0 && !!cittaSotto(e.clientX, e.clientY, e.pointerType === 'mouse');
     pointerGiù(e);
   });
   canvas.addEventListener('pointermove', e => {
     /* soglia di trascinamento: più alta quando il tocco era su un bersaglio,
-       così un tocco non perfettamente fermo non ruota il globo */
-    const soglia = toccoSuBersaglio ? 26 : 12;
+       così un tocco non perfettamente fermo non ruota il globo. Col il MOUSE
+       la soglia è minima: un clic con movimenti centimetri è un clic impreciso,
+       non una selezione. */
+    const isMouse = e.pointerType === 'mouse';
+    const soglia = isMouse ? 5 : (toccoSuBersaglio ? 26 : 12);
     if (dita.has(e.pointerId) && Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > soglia) spostato = true;
     pointerMovi(e);
   });
@@ -782,14 +810,18 @@ function initGlobo(feats) {
     const eraTap = !spostato && dita.size <= 1 && (Date.now() - downTime) < 400;
     pointerSu(e);
     if (eraTap && dita.size === 0) {
+      /* il tap risponde alle coordinate di PRESSIONE (downX/downY), non a
+         quelle di rilascio: un mouse che si muove di pochi pixel durante il
+         clic non deve selezionare una città diversa da quella premuta */
+      const tapX = downX, tapY = downY;
       /* solo se tocco dentro il "disco" del globo */
       const raggio = scalaAttuale();
-      const dx = e.clientX - W / 2, dy = e.clientY - H / 2;
+      const dx = tapX - W / 2, dy = tapY - H / 2;
       if (Math.hypot(dx, dy) <= raggio) {
-        const f0 = nazioneSotto(e.clientX, e.clientY);
+        const f0 = nazioneSotto(tapX, tapY);
         /* microstato: il tocco apre la NAZIONE (per marcarla), non la citta */
         if (f0 && eMicrostato(f0)) { selezionaNazione(f0); return; }
-        const c = cittaSotto(e.clientX, e.clientY);
+        const c = cittaSotto(tapX, tapY, e.pointerType === 'mouse');
         if (c) {
           if (stato.modalita === 'percorsi') toggleTappa(c);
           else if (eParco(c.id)) toast('🏞️ ' + c.nome + ' (parco nazionale)');
@@ -1383,6 +1415,25 @@ function toggleCitta(id, centra) {
 function renderPannello() {
   const p = document.getElementById('pannello');
   if (!stato.selezionata) {
+    /* In vista Percorsi il pannello si apre anche SENZA una nazione
+       selezionata: mostra "Il tuo percorso" (tappe da riordinare/togliere). */
+    if (stato.modalita === 'percorsi') {
+      p.classList.add('aperta');
+      p.innerHTML = `
+        <div class="p-head">
+          <h2>🗺️ Il tuo percorso</h2>
+          <button class="btn" id="p-chiudi">✕</button>
+        </div>
+        <div class="p-sub"><span>${stato.percorsoTappe.length ? 'Tocca una tappa per toglierla · frecce per riordinare' : 'Tocca le città e i parchi sul globo per costruirlo'}</span><b id="p-count">${stato.percorsoTappe.length}</b></div>
+        <div class="p-lista" id="p-lista"></div>`;
+      document.getElementById('p-chiudi').addEventListener('click', () => {
+        document.getElementById('pannello').classList.remove('aperta');
+      });
+      renderListaCitta();
+      aggiornaContatoreCitta();
+      aggiornaPunti();
+      return;
+    }
     p.classList.remove('aperta');
     aggiornaPunti();
     return;
@@ -1550,13 +1601,38 @@ async function geoCerca(q, count) {
 
 function renderListaCitta() {
   const el = document.getElementById('p-lista');
-  if (!el || !stato.selezionata) return;
-  const { filtrata, totale } = listaFiltrata();
+  if (!el) return;
   const inPercorsi = stato.modalita === 'percorsi';
+  const { filtrata, totale } = stato.selezionata ? listaFiltrata() : { filtrata: [], totale: 0 };
 
   if (!stato.pronte) {
     el.innerHTML = '<div class="vuoto">⏳ Elenco città in caricamento…</div>';
     return;
+  }
+
+  let html = '';
+
+  /* Blocco "Il tuo percorso": in cima alla lista, VISIBILE anche senza una
+     nazione selezionata. Ogni tappa in ordine con frecce per riordinarla e
+     tap sulla riga per toglierla dal percorso. */
+  if (inPercorsi && stato.percorsoTappe.length) {
+    const pp = stato.percorsoTappe;
+    html += `<div class="sez-percorso">Il tuo percorso (${pp.length} tappe)</div>`;
+    html += '<div class="int-tappe">';
+    pp.forEach((t, i) => {
+      const capo = eParco(t.id) ? '🏞️ ' : '';
+      html += `<div class="riga-citta tappa nel-percorso" data-id="${t.id}">
+        <span class="t-num">${i + 1}</span>
+        <span class="info"><span class="nome">${capo}${esc(t.nome)}</span></span>
+        <span class="frecce">
+          <button class="f-up" data-msg="${t.id}" ${i === 0 ? 'disabled' : ''}>⇡</button>
+          <button class="f-down" data-msg="${t.id}" ${i === pp.length - 1 ? 'disabled' : ''}>⇣</button>
+        </span>
+        <span class="t-rem">✕</span>
+      </div>`;
+    });
+    html += '</div>';
+    html += '<div class="vuoto" style="margin:2px 0 6px">Tocca una tappa per toglierla · usa le frecce per riordinare</div>';
   }
 
   /* In modalità Percorsi la lista segue l'ORDINE del percorso (le tappe della
@@ -1573,41 +1649,52 @@ function renderListaCitta() {
     });
   }
 
-  let html = '';
-  if (!filtrata.length) {
-    html += `<div class="vuoto">${totale ? 'Nessuna città trovata' : 'Nessuna città in elenco per questa nazione'}</div>`;
-  } else {
-    filtrata.slice(0, MAX_RIGHE).forEach(c => {
-      const vis = inPercorsi ? posTappa.has(c.id) : stato.visitateCitta.has(c.id);
-      const nTappa = posTappa.has(c.id) ? posTappa.get(c.id) + 1 : '';
-      const frecce = (inPercorsi && vis) ? `<span class="frecce">
-        <button class="f-up" data-msg="${c.id}">⇡</button>
-        <button class="f-down" data-msg="${c.id}">⇣</button>
-      </span>` : '';
-      const label = inPercorsi ? (nTappa ? '#' + nTappa : (eParco(c.id) ? 'Parco' : formattaPop(c.pop))) : (eParco(c.id) ? 'Parco' : formattaPop(c.pop));
-      html += `<div class="riga-citta ${vis ? (inPercorsi ? 'tappa' : 'visitata') : ''}" data-id="${c.id}">
-        <span class="pallino" ${eParco(c.id) ? 'style="background:#4ade80"' : ''}></span>
-        <span class="info"><span class="nome">${esc(c.nome)}</span></span>
-        ${frecce}
-        <span class="pop">${label}</span>
-      </div>`;
-    });
-    if (filtrata.length > MAX_RIGHE) {
-      html += `<div class="vuoto">…altre ${filtrata.length - MAX_RIGHE} città: usa la ricerca</div>`;
+  /* La lista delle città della nazione selezionata (solo se una nazione è
+     selezionata: altrimenti in Percorsi basta il blocco "Il tuo percorso"). */
+  if (stato.selezionata) {
+    if (!filtrata.length) {
+      html += `<div class="vuoto">${totale ? 'Nessuna città trovata' : 'Nessuna città in elenco per questa nazione'}</div>`;
+    } else {
+      filtrata.slice(0, MAX_RIGHE).forEach(c => {
+        const vis = inPercorsi ? posTappa.has(c.id) : stato.visitateCitta.has(c.id);
+        const nTappa = posTappa.has(c.id) ? posTappa.get(c.id) + 1 : '';
+        const frecce = (inPercorsi && vis) ? `<span class="frecce">
+          <button class="f-up" data-msg="${c.id}">⇡</button>
+          <button class="f-down" data-msg="${c.id}">⇣</button>
+        </span>` : '';
+        const label = inPercorsi ? (nTappa ? '#' + nTappa : (eParco(c.id) ? 'Parco' : formattaPop(c.pop))) : (eParco(c.id) ? 'Parco' : formattaPop(c.pop));
+        html += `<div class="riga-citta ${vis ? (inPercorsi ? 'tappa' : 'visitata') : ''}" data-id="${c.id}">
+          <span class="pallino" ${eParco(c.id) ? 'style="background:#4ade80"' : ''}></span>
+          <span class="info"><span class="nome">${esc(c.nome)}</span></span>
+          ${frecce}
+          <span class="pop">${label}</span>
+        </div>`;
+      });
+      if (filtrata.length > MAX_RIGHE) {
+        html += `<div class="vuoto">…altre ${filtrata.length - MAX_RIGHE} città: usa la ricerca</div>`;
+      }
     }
-  }
 
-  /* riga per aggiungere una città non presente nel database */
-  const q = (stato.query || '').trim();
-  html += `<div class="riga-citta" id="aggiungi-citta" style="border:1px dashed rgba(120,160,255,.4);margin-top:6px">
-    <span style="color:#38bdf8;font-size:15px">➕</span>
-    <span class="info"><span class="nome" style="color:#38bdf8">${esc(q || 'Aggiungi una città non in elenco')}</span></span>
-  </div>`;
+    /* riga per aggiungere una città non presente nel database */
+    const q = (stato.query || '').trim();
+    html += `<div class="riga-citta" id="aggiungi-citta" style="border:1px dashed rgba(120,160,255,.4);margin-top:6px">
+      <span style="color:#38bdf8;font-size:15px">➕</span>
+      <span class="info"><span class="nome" style="color:#38bdf8">${esc(q || 'Aggiungi una città non in elenco')}</span></span>
+    </div>`;
+  } else if (inPercorsi && !stato.percorsoTappe.length) {
+    html += `<div class="vuoto">Tocca le città e i parchi sul globo per costruire il tuo percorso</div>`;
+  }
 
   el.innerHTML = html;
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => {
       if (inPercorsi) {
+        if (r.classList.contains('nel-percorso')) {
+          /* riga del blocco "Il tuo percorso": toglie la tappa */
+          const t = stato.percorsoTappe.find(x => x.id === r.dataset.id);
+          if (t) toggleTappa(t);
+          return;
+        }
         const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id] || PARCHI_BY_ID.get(r.dataset.id);
         if (c) {
           const prima = !stato.percorsoTappe.some(t => t.id === c.id);
@@ -1631,6 +1718,12 @@ function renderListaCitta() {
   el.querySelectorAll('.f-down').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
     spostaTappa(b.dataset.msg, +1);
+  }));
+
+  el.querySelectorAll('.t-rem').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const t = stato.percorsoTappe.find(x => x.id === b.parentElement.dataset.id);
+    if (t) toggleTappa(t);
   }));
 
   el.querySelector('#aggiungi-citta').addEventListener('click', () => {
@@ -1661,15 +1754,15 @@ function aggiornaRigaCitta(id) {
 
 function aggiornaContatoreCitta() {
   const el = document.getElementById('p-count');
-  if (!el || !stato.selezionata) return;
-  const tutte = stato.cittaPerNazione.get(stato.selezionata) || [];
+  if (!el) return;
   if (stato.modalita === 'percorsi') {
-    const vis = tutte.filter(c => stato.percorsoTappe.some(t => t.id === c.id)).length;
-    el.textContent = stato.pronte ? `${vis} tappe` : '…';
-  } else {
-    const vis = tutte.filter(c => stato.visitateCitta.has(c.id)).length;
-    el.textContent = stato.pronte ? `${vis}/${tutte.length}` : '…';
+    el.textContent = stato.pronte ? `${stato.percorsoTappe.length} ${stato.percorsoTappe.length === 1 ? 'tappa' : 'tappe'}` : '…';
+    return;
   }
+  if (!stato.selezionata) return;
+  const tutte = stato.cittaPerNazione.get(stato.selezionata) || [];
+  const vis = tutte.filter(c => stato.visitateCitta.has(c.id)).length;
+  el.textContent = stato.pronte ? `${vis}/${tutte.length}` : '…';
 }
 
 /* ---------------- statistiche ---------------- */
@@ -2085,7 +2178,13 @@ document.getElementById('bt-percorsi').addEventListener('click', () => {
     : '🗺️ Vista mappa');
   if (globo2d) globo2d.aggiorna();
   aggiornaPunti();
-  if (stato.selezionata) renderListaCitta();
+  if (stato.selezionata) {
+    renderPannello();
+  } else if (stato.modalita === 'percorsi') {
+    /* apre subito "Il tuo percorso" per riordinare/togliere le tappe */
+    renderPannello();
+    renderListaCitta();
+  }
 });
 document.getElementById('imp-chiudi').addEventListener('click', () =>
   document.getElementById('modale-imp').classList.remove('aperta'));

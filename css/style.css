@@ -51,11 +51,24 @@ html,body{margin:0;height:100%;overflow:hidden;color:#e8edf7;font-family:system-
 .riga-citta.visitata .nome{color:#fcd34d}
 .riga-citta .pop{font-size:11px;color:#8fa0c4}
 .riga-citta .frecce{display:flex;gap:4px;flex-shrink:0}
-.riga-citta .frecce button{width:26px;height:26px;border-radius:6px;border:1px solid rgba(120,160,255,.3);
-  background:rgba(255,255,255,.08);color:#cbd5e1;font-size:13px;cursor:pointer}
+.riga-citta .frecce button{width:34px;height:34px;border-radius:8px;border:1px solid rgba(120,160,255,.3);
+  background:rgba(255,255,255,.08);color:#cbd5e1;font-size:15px;cursor:pointer}
 .riga-citta .frecce button:active{background:rgba(129,140,248,.4)}
+.riga-citta .frecce button:disabled{opacity:.3}
 .riga-citta[data-nazione]{cursor:pointer}
 .vuoto{padding:18px;text-align:center;color:#7f90b5;font-size:13px}
+
+/* blocco "Il tuo percorso" (vista Percorsi): tappe in ordine, numerate,
+   con frecce per riordinare e ✕ per toglierle */
+.sez-percorso{padding:10px 12px 4px;color:#fdba74;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.int-tappe{border:1px solid rgba(249,115,22,.25);border-radius:12px;margin:0 6px;background:rgba(249,115,22,.06);overflow:hidden}
+.int-tappe .riga-citta{border-bottom:1px solid rgba(249,115,22,.15);border-radius:0}
+.int-tappe .riga-citta:last-child{border-bottom:none}
+.int-tappe .riga-citta .nome{color:#fde68a}
+.int-tappe .t-num{color:#fdba74;font-weight:700;font-size:13px;min-width:22px;text-align:center;flex-shrink:0}
+.int-tappe .t-num::after{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:#f97316;margin-left:2px;vertical-align:2px}
+.int-tappe .t-rem{color:#f87171;font-size:16px;padding:6px;flex-shrink:0;cursor:pointer;border-radius:8px}
+.int-tappe .t-rem:active{background:rgba(248,113,113,.2)}
 
 /* dove vivo */
 .riga-casa{cursor:pointer;color:#c4b5fd}
