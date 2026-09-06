@@ -1260,8 +1260,6 @@ function toggleTappa(c) {
   aggiornaPunti();
   renderListaCitta();
   if (globo2d) globo2d.aggiorna();
-  /* dalla lista città: mantengo l'immagine sul punto invece di allontanare */
-  if (!esistente && globo2d) globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
 }
 
 function vistaAttualeAlt() {
@@ -1521,7 +1519,13 @@ function renderListaCitta() {
       try {
         if (inPercorsi) {
           const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id];
-          if (c) toggleTappa(c);
+          if (c) {
+            const prima = !stato.percorsoTappe.some(t => t.id === c.id);
+            toggleTappa(c);
+            if (prima && globo2d && c.lat != null && c.lon != null) {
+              globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
+            }
+          }
         } else {
           toggleCitta(r.dataset.id, true);
         }
