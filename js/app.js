@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.11';
+const APP_VER = 'v1.20.12';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -516,6 +516,11 @@ function initGlobo(feats) {
   function pointerMovi(e) {
     if (dita.has(e.pointerId)) dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (dita.size === 1 && trascinando) {
+      /* se il tocco era PARTITO su un pallino/nome e il dito non ha ancora
+         superato la soglia di "trascinamento", NON ruotiamo il globo:
+         un micro-movimento durante il tap non deve spostare la vista
+         (altrimenti il globo sembra "riallontanarsi" da solo). */
+      if (toccoSuBersaglio && !spostato) return;
       const dx = e.clientX - ultimoX;
       const dy = e.clientY - ultimoY;
       /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
@@ -764,73 +769,40 @@ function liveAltitudine() {
 /* distanza (alt) oltre la quale NON compaiono le città da selezionare:
    "zoom molto vicino": le città della vista globale appaiono solo quando
    ti avvicini abbastanza, così niente caos da lontano. L'utente regola. */
-const GATE_CITTA = 0.15;
+const GATE_CITTA = 0.6;
 
 /* le città visitate + la casa compaiono SOLO molto vicini (zoom profondo):
    sotto questa altitudine (0.10). Prima non si vedono. L'utente l'ha scelto. */
 const GATE_VISITATE = 0.10;
 
-/* soglia di popolazione per la comparsa progressiva delle città: a uno
-   scaglione (indice) corrisponde una soglia di popolazione. Più ci si avvicina
-   (indice basso/tardi) più la soglia scende e emergono più città. */
-const SOGLIA_POP_SCAGLIONE = [
-  0,            // sc0  (~0.005): poche città, zona minuscola
-  0,            // sc1  (~0.008)
-  0,            // sc2  (~0.012)
-  0,            // sc3  (~0.020)
-  200,          // sc4  (~0.035)
-  1500,         // sc5  (~0.060)
-  4000,         // sc6  (~0.10)
-  12000,        // sc7  (~0.16)
-  25000,        // sc8  (~0.26)
-  50000,        // sc9  (~0.45)
-  120000,       // sc10 (~0.8)
-  300000,       // sc11 (~1.5)
-  9000000       // sc12 (molto lontano)
-];
-
-function scaglioneDi(alt) {
-  if (alt == null) return SOGLIE_ZOOM.length - 1;
-  const i = SOGLIE_ZOOM.findIndex(s => alt <= s);
-  return i < 0 ? SOGLIE_ZOOM.length - 1 : i;
-}
-
+/* soglia di popolazione per la comparsa progressiva delle città:
+   FONZIONE CONTINUA (niente scaglioni): piu ci si avvicina (alt bassa),
+   piu la soglia scende e emergono sempre piu città, in modo graduale,
+   senza "salti" a blocchi. La soglia viene stampata su una curva logaritmica
+   cosi le piccole città emergono vicino e le grandi da lontano. */
 function sogliaPopDaAlt(alt) {
-  return SOGLIA_POP_SCAGLIONE[scaglioneDi(alt)];
+  if (alt == null) return 900000;
+  const al = Math.max(0.004, Math.min(2.7, alt));
+  /* transizione GRADUALE su tutta la scala di zoom: da lontano (alt alta)
+     solo le metropoli (soglia alta), avvicinandosi scende e emergono via via
+     le città più piccole. Nessun "tutto insieme". */
+  return Math.round(900000 * Math.pow(al / 2.7, 1.4));
 }
+
+function scaglioneDi() {}
 
 /* simbolo per distinguere "nazioni aggiornate" vs "città aggiornate" */
 const NG_CITTA = '__citta__';
 
-/* Scaglioni discreti della soglia di popolazione: durante lo zoom i punti
-   (e i nomi) vengono ricalcolati SOLO quando la soglia passa da uno scaglione
-   all'altro, non ad ogni pixel di zoom. Così la visualizzazione è STABILE,
-   senza flicker/ricreazione continua mentre ti avvicini o allontani. */
-const SOGLIE_ZOOM = [
-  0.005,      // sc0: zoom assoluto max -> pochissimi pallini centrali
-  0.008,      // sc1
-  0.012,      // sc2
-  0.020,      // sc3
-  0.035,      // sc4
-  0.060,      // sc5
-  0.10,       // sc6
-  0.16,       // sc7
-  0.26,       // sc8
-  0.45,       // sc9
-  0.8,        // sc10
-  1.5,        // sc11
-  2.7         // sc12: quasi nessuna città
-];
-
 function aggiornaEtichetteZoometta() {
   const alt = liveAltitudine();
   if (alt == null) return;
-  /* quantizza l'altitudine in uno scaglione -> la soglia di popolazione
-     "salta" solo tra scaglioni, stabile durante lo zoom */
-  let idx = SOGLIE_ZOOM.findIndex(s => alt <= s);
-  if (idx < 0) idx = SOGLIE_ZOOM.length - 1;
-  const nuovo = idx;
-  if (nuovo !== ultimaSogliaCitta) {
+  /* soglia CONTINUA: la soglia di popolazione cambia in modo graduale con
+     lo zoom, senza salti a blocchi. Debounce: ricalcoliamo i punti solo
+     quando la soglia cambia di almeno il 10%, per evitare flicker ma
+     mantenere una comparsa fluida delle città man mano che ci si avvicina. */
+  const nuovo = sogliaPopDaAlt(alt);
+  if (ultimaSogliaCitta === null || Math.abs(nuovo - ultimaSogliaCitta) / Math.max(1, ultimaSogliaCitta) > 0.10) {
     ultimaSogliaCitta = nuovo;
     aggiornaPunti(NG_CITTA);
   }
@@ -1050,21 +1022,14 @@ function puntiVisibili() {
 
   /* NESSUNA nazione selezionata, vista globale:
      i pallini delle città compaiono SOLO a zoom molto vicino (sotto GATE_CITTA),
-     e via via emergono sempre più città (soglia di popolazione scende per
-     scaglioni, stabile). Ogni pallino mostrato avrà il suo nome. */
+     e via via emergono sempre più città (soglia di popolazione CONTINUA, che
+     scende con lo zoom in modo graduale). Ogni pallino avrà il suo nome. */
   if (alt != null && alt >= GATE_CITTA) return Array.from(mappa.values());
 
-  const soglia = sogliaPopDaAlt(alt);     // quantizzata per scaglione
-  /* cap in base allo scaglione: vicino tante città, lontano poche (stabile,
-     senza salti bruschi in mezzo allo zoom) */
-  const sc = scaglioneDi(alt);
-  /* cap in base allo scaglione: a zoom molto profondo (sc 0..2) la zona è
-     piccola quindi mostriamo pochi pallini centrali cosi i SOLI nomi si
-     leggono; a scaglioni medi più città; da lontano poche. Stabile. */
-  const capTot =
-    sc <= 0 ? 150 : (sc <= 1 ? 260 : (sc <= 2 ? 420 : (sc <= 3 ? 700 :
-    (sc <= 4 ? 1100 : (sc <= 5 ? 1800 : (sc <= 6 ? 2800 :
-    (sc <= 7 ? 3400 : (sc <= 9 ? 3200 : 2000))))))));
+  const soglia = sogliaPopDaAlt(alt);     // continua, scende con lo zoom
+  /* cap totale, graduale: a zoom massimo pochi pallini centrali (nomi
+     leggibili), poi cresce fino a un massimo avvicinandosi, senza salti */
+  const capTot = Math.max(150, Math.round(4500 * Math.min(1, Math.pow(alt / 0.08, 1.4))));
 
   const daMostrare = (globo2d ? globo2d.cittaPerZoom() : [])
     .filter(c => c && (c.pop || 0) >= soglia)
@@ -1073,10 +1038,9 @@ function puntiVisibili() {
   daMostrare.forEach(c => push(c));
 
   /* la nazione centrale in primo piano: TUTTE le sue città sopra la soglia,
-     per riempire la zona che stai guardando e non lasciare buchi. Solo per
-     scaglioni "medi" (zoom profondo ma non minimo): a zoom massimo (sc 0..2)
-     basta il pool + i nomi, che si leggono perché la zona è piccola. */
-  if (sc >= 1 && sc <= 8) {
+     per riempire la zona che stai guardando e non lasciare buchi. Solo a zoom
+     abbastanza vicino (alt < 0.35): a zoom medio i buchi si colmano qui. */
+  if (alt < 0.35) {
     const centro = nazioneAlCentro();
     if (centro) {
       (stato.cittaPerNazione.get(centro) || [])
