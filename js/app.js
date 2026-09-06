@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.21.0';
+const APP_VER = 'v1.22.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -17,6 +17,7 @@ const LS_CACHE   = 'cb3_cache_citta';
 const LS_CASA    = 'cb3_casa';
 const LS_ORDINE  = 'cb3_visite_ordine';   // percorso: id in ordine di inserimento
 const LS_DATA    = 'cb3_visite_data';     // percorso: id -> 'YYYY-MM-DD'
+const LS_PERCORSO = 'cb3_percorso';       // vista Percorsi: tappe del viaggio
 
 /* palette: colori ben distinti fra loro */
 const COL = {
@@ -28,7 +29,8 @@ const COL = {
   cittaVista: '#ff2d2d',                  // rosso vivo: città visitata
   cittaNo: '#000000',                     // nero: città non ancora visitata
   cittaCap: '#ffd166',                  // oro: capitale
-  cittaCasa: '#c084fc'                    // viola vivo: città dove vivo
+  cittaCasa: '#c084fc',                   // viola vivo: città dove vivo
+  cittaPercorso: '#f97316'                // arancio vivo: tappa del percorso itinerante
 };
 
 const stato = {
@@ -41,6 +43,7 @@ const stato = {
   visitateCitta: new Set(),
   visiteOrdine: [],
   visiteData: {},
+  percorsoTappe: [],   // vista Percorsi: tappe del viaggio {id,nome,lat,lon,key} in ordine
   casaNazione: null,   // key della nazione di residenza
   casaCitta: null,     // {id,nome,lat,lon} della città di residenza
   selezionata: null,
@@ -106,6 +109,7 @@ function salva() {
   localStorage.setItem(LS_CITTA, JSON.stringify([...stato.visitateCitta]));
   try { localStorage.setItem(LS_ORDINE, JSON.stringify(stato.visiteOrdine)); } catch (e) {}
   try { localStorage.setItem(LS_DATA, JSON.stringify(stato.visiteData)); } catch (e) {}
+  try { localStorage.setItem(LS_PERCORSO, JSON.stringify(stato.percorsoTappe)); } catch (e) {}
 }
 
 function salvaCache() {
@@ -128,6 +132,8 @@ function carica() {
     }
     stato.visiteOrdine = JSON.parse(localStorage.getItem(LS_ORDINE) || '[]');
     stato.visiteData = JSON.parse(localStorage.getItem(LS_DATA) || '{}');
+    stato.percorsoTappe = JSON.parse(localStorage.getItem(LS_PERCORSO) || '[]');
+    if (!Array.isArray(stato.percorsoTappe)) stato.percorsoTappe = [];
     /* per gli utenti che hanno già visitato città prima dell'introduzione del
        percorso: ricostruiamo l'ordine dal Set delle città visitate (senza data),
        così il percorso funziona anche per le visite passate. */
@@ -253,32 +259,51 @@ function eCasa(id) {
   return !!(stato.casaCitta && stato.casaCitta.id === id);
 }
 
+/* la città è una tappa del percorso attivo (vista Percorsi)? */
+function eTappaPercorso(id) {
+  if (stato.modalita !== 'percorsi') return false;
+  for (const t of stato.percorsoTappe) if (t && t.id === id) return true;
+  return false;
+}
+
+/* "accesa" = va evidenziata come visitata/tappa nella vista corrente */
+function cittaAccesa(c) {
+  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id);
+  return stato.visitateCitta.has(c.id);
+}
+
 function colorePunto(c) {
   if (eCasa(c.id)) return COL.cittaCasa;
   if (c.cap) return COL.cittaCap;
+  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? COL.cittaPercorso : COL.cittaNo;
   return stato.visitateCitta.has(c.id) ? COL.cittaVista : COL.cittaNo;
 }
 
 function altPunto(c) {
   if (eCasa(c.id)) return 0.04;
+  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? 0.035 : 0.008;
   if (stato.visitateCitta.has(c.id)) return 0.025;
   return 0.008;
 }
 
 function raggioPunto(c) {
   if (eCasa(c.id)) return 0.5;
+  if (stato.modalita === 'percorsi') return eTappaPercorso(c.id) ? 0.3 : 0.07;
   if (stato.visitateCitta.has(c.id)) return 0.22;
   return 0.07;
 }
 
 function etichettaCitta(c) {
-  const vis = stato.visitateCitta.has(c.id);
+  const vis = cittaAccesa(c);
   const pref = eCasa(c.id) ? '🏠 ' : '';
-  const col = eCasa(c.id) ? '#c084fc' : (vis ? '#ff2d2d' : '#93a4c8');
+  const col = eCasa(c.id) ? '#c084fc' : (vis ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff2d2d') : '#93a4c8');
+  const statoTesto = stato.modalita === 'percorsi'
+    ? (vis ? '✓ Tappa del percorso' : 'Tocca per aggiungere al percorso')
+    : (vis ? '✓ Visitata' : 'Tocca per segnare');
   return `<div style="background:rgba(11,17,34,.92);padding:6px 10px;border-radius:8px;border:1px solid rgba(120,160,255,.35)">
         <b>${pref}${esc(c.nome)}</b>${c.pop ? ` · ${formattaPop(c.pop)}` : ''}<br>
         <span style="font-size:11px;color:${col}">
-          ${eCasa(c.id) ? 'La tua città' : vis ? '✓ Visitata' : 'Tocca per segnare'}</span></div>`;
+          ${eCasa(c.id) ? 'La tua città' : statoTesto}</span></div>`;
 }
 
 function initGlobo(feats) {
@@ -437,20 +462,20 @@ function initGlobo(feats) {
         }
       }
       const casa = eCasa(c.id);
-      const visitata = stato.visitateCitta.has(c.id);
+      const acc = cittaAccesa(c);
       const cap = !casa && !!c.cap;
-      const peso = casa ? 4 : (cap ? 3 : (visitata ? 2 : 1));
+      const peso = casa ? 4 : (cap ? 3 : (acc ? 2 : 1));
       if (migliore && migliore.peso >= peso) continue;   // un altro più importante lo copre
       if (migliore) grid.delete(key(Math.floor(migliore.p[0] / passo), Math.floor(migliore.p[1] / passo)));
       if (!grid.has(key(cellaX, cellaY))) grid.set(key(cellaX, cellaY), []);
       grid.get(key(cellaX, cellaY)).push({ p, peso });
-      const r = casa ? 2.6 : (cap ? 2.0 : (visitata ? 1.5 : 1.2));
+      const r = casa ? 2.6 : (cap ? 2.0 : (acc ? 1.5 : 1.2));
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
       ctx.fill();
       ctx.strokeStyle = cap ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = (visitata || casa || cap) ? 1.1 : 0.8;
+      ctx.lineWidth = (acc || casa || cap) ? 1.1 : 0.8;
       ctx.stroke();
     }
   }
@@ -477,7 +502,8 @@ function initGlobo(feats) {
       ctx.fillStyle = 'rgba(8,14,32,0.82)';
       roundRect(x0, y0, x1 - x0, y1 - y0, 3);
       ctx.fill();
-      ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (e.vis ? '#ff6b6b' : '#5eead4'));
+      const accE = cittaAccesa(e);
+      ctx.fillStyle = e.casa ? '#c084fc' : (cap ? '#ffd166' : (accE ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff6b6b') : '#5eead4'));
       ctx.fillText(e.nome, p[0] + 8, p[1]);
     }
   }
@@ -495,54 +521,18 @@ function initGlobo(feats) {
 
   const SOGLIA_PERCORSO = 0.16;   /* vicinanza minima per far vedere il percorso (regione per regione) */
 
-  /* Le tappe del percorso della nazione data, nell'ordine in cui sono state
-     segnate (stato.visiteOrdine). Restituisce array di {id,nome,lat,lon}. */
-  function tappePercorso(keyNazione) {
-    const mappa = stato.cittaPerNazione.get(keyNazione) || [];
-    const lista = [];
-    const viste = new Set();
-    for (const id of stato.visiteOrdine) {
-      if (!stato.visitateCitta.has(id)) continue;
-      if (viste.has(id)) continue;
-      let c = null;
-      for (const x of mappa) if (x.id === id) { c = x; break; }
-      if (!c) {
-        const cch = stato.cittaById.get(id) || stato.cacheCitta[id];
-        if (cch && cch.key === keyNazione) c = cch;
-        else if (cch && cch.lat != null) {
-          /* fallback: la cache salvata in passato può non avere la key.
-             Verifichiamo che la città abbia coordinate e che ricada davvero
-             in questa nazione (anticipando il comportamento di nazioneAlCentro). */
-          const g = { type: 'Point', coordinates: [cch.lon, cch.lat] };
-          const f = stato.featureByKey.get(keyNazione);
-          if (f && d3.geoContains(f, g)) c = cch;
-          else continue;
-        } else continue;
-      }
-      viste.add(id);
-      lista.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon });
-    }
-    return lista;
-  }
-
   function disegnaPercorso() {
     /* il percorso (linee dei viaggi) si vede SOLO nella vista Percorsi,
        e solo da vicino (regione per regione) */
     if (stato.modalita !== 'percorsi') return;
     if (vista.alt > SOGLIA_PERCORSO) return;
-    let keyNazione = null;
-    if (stato.selezionata) keyNazione = stato.selezionata;
-    else {
-      const c = nazioneAlCentro();
-      if (c) keyNazione = c;
-    }
-    if (!keyNazione) return;
-    const tappe = tappePercorso(keyNazione);
+    const tappe = stato.percorsoTappe || [];
     if (tappe.length < 2) return;
-    /* linea di percorso da tappa a tappa, con piccole frecce di direzione
-       a metà di ogni segmento */
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = 1;
+    /* linea di percorso da tappa a tappa (nell'ordine in cui le segni),
+       visibile e marcata, con frecce di direzione a metà di ogni segmento */
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(251,146,60,0.55)';
+    ctx.lineWidth = 4;
     for (let i = 0; i < tappe.length - 1; i++) {
       const a = puntoSchermo(tappe[i]);
       const b = puntoSchermo(tappe[i + 1]);
@@ -551,22 +541,26 @@ function initGlobo(feats) {
       ctx.moveTo(a[0], a[1]);
       ctx.lineTo(b[0], b[1]);
       ctx.stroke();
-      /* freccia a metà */
+    }
+    /* frecce di direzione a metà di ogni segmento (ben visibili) */
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2.4;
+    for (let i = 0; i < tappe.length - 1; i++) {
+      const a = puntoSchermo(tappe[i]);
+      const b = puntoSchermo(tappe[i + 1]);
+      if (!a || !b) continue;
       const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
       const dx = b[0] - a[0], dy = b[1] - a[1];
       const len = Math.hypot(dx, dy);
-      if (len > 0) {
-        const ux = dx / len, uy = dy / len;
-        const px = -uy, py = ux;
-        ctx.beginPath();
-        ctx.moveTo(mx + ux * 6, my + uy * 6);
-        ctx.lineTo(mx + (-ux * 2 + px * 3), my + (-uy * 2 + py * 3));
-        ctx.moveTo(mx + ux * 6, my + uy * 6);
-        ctx.lineTo(mx + (-ux * 2 - px * 3), my + (-uy * 2 - py * 3));
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-      }
+      if (len < 10) continue;
+      const ux = dx / len, uy = dy / len;
+      const px = -uy, py = ux;
+      ctx.beginPath();
+      ctx.moveTo(mx + ux * 9, my + uy * 9);
+      ctx.lineTo(mx + (-ux * 3 + px * 5), my + (-uy * 3 + py * 5));
+      ctx.moveTo(mx + ux * 9, my + uy * 9);
+      ctx.lineTo(mx + (-ux * 3 - px * 5), my + (-uy * 3 - py * 5));
+      ctx.stroke();
     }
   }
 
@@ -678,6 +672,9 @@ function initGlobo(feats) {
     if (dita.size === 0) {
       trascinando = false;
       controlli.autoRotate = false;
+      /* il globo si FERMA subito quando tolgo il dito: niente inerzia
+         residua che continua a ruotare da sola */
+      velX = 0; velY = 0;
     }
   }
 
@@ -686,7 +683,8 @@ function initGlobo(feats) {
     if (!click) return;
     const c = cittaSotto(click.x, click.y);
     if (c) {
-      toggleCitta(c.id);
+      if (stato.modalita === 'percorsi') toggleTappa(c);
+      else toggleCitta(c.id);
       ultimoEventoClick = null;
       return;
     }
@@ -724,7 +722,11 @@ function initGlobo(feats) {
         /* microstato: il tocco apre la NAZIONE (per marcarla), non la citta */
         if (f0 && eMicrostato(f0)) { selezionaNazione(f0); return; }
         const c = cittaSotto(e.clientX, e.clientY);
-        if (c) { toggleCitta(c.id); return; }
+        if (c) {
+          if (stato.modalita === 'percorsi') toggleTappa(c);
+          else toggleCitta(c.id);
+          return;
+        }
         if (f0) selezionaNazione(f0);
         else deseleziona();
       }
@@ -1130,9 +1132,22 @@ function puntiVisibili() {
     return Array.from(mappa.values());
   }
 
-  /* citta visitate + casa: NON sempre visibili (l'utente non li vuole sempre).
-     Compaiono avvicinandosi, sotto GATE_VISITATE. */
-  if (stato.visitateCitta.size || stato.casaCitta) {
+  /* Nella vista Percorsi le TAPPE del percorso attivo compaiono SEMPRE
+     (è il contenuto della vista): le aggiungiamo al visible pool senza
+     soglia di zoom, così le tocchi e le rivedi subito. */
+  if (stato.modalita === 'percorsi') {
+    for (const t of stato.percorsoTappe) {
+      push(stato.cittaById.get(t.id) || stato.cacheCitta[t.id] ||
+           { id: t.id, nome: t.nome, lat: t.lat, lon: t.lon, pop: 0, key: t.key });
+    }
+    if (stato.casaCitta) {
+      push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
+    }
+  }
+
+  /* citta visitate + casa (solo vista Mappa): NON sempre visibili (l'utente
+     non li vuole sempre). Compaiono avvicinandosi, sotto GATE_VISITATE. */
+  if (stato.modalita !== 'percorsi' && (stato.visitateCitta.size || stato.casaCitta)) {
     if (alt != null && alt < GATE_VISITATE) {
       for (const id of stato.visitateCitta) {
         push(stato.cittaById.get(id) || stato.cacheCitta[id]);
@@ -1187,7 +1202,15 @@ function etichetteVisibili() {
   if (!globo2d) return [];
   const attuali = globo2d.currentPoints() || [];
   const elenco = [];
-  const viste = new Set(stato.visitateCitta);
+  /* in modalità percorsi le etichette seguono le TAPPE del percorso (non le
+     visite della mappa): così i nomi delle tappe compaiono in evidenza */
+  let viste;
+  if (stato.modalita === 'percorsi') {
+    viste = new Set();
+    for (const t of stato.percorsoTappe) if (t && t.id) viste.add(t.id);
+  } else {
+    viste = new Set(stato.visitateCitta);
+  }
   const ordinate = attuali.slice()
     .sort((a, b) =>
       ((b.casa ? 1 : 0) - (a.casa ? 1 : 0)) ||
@@ -1212,6 +1235,34 @@ function aggiornaPunti() {
     globo2d.labelsData(etichetteVisibili());
   } catch (e) {}
   aggiornaHUD();
+}
+
+/* vista Percorsi: aggiunge/rimuove una tappa dal percorso attivo.
+   Le tappe vivono in stato.percorsoTappe (dataset separato dalla mappa),
+   così le due viste hanno vite indipendenti. */
+function toggleTappa(c) {
+  const esistente = stato.percorsoTappe.some(t => t && t.id === c.id);
+  if (esistente) {
+    stato.percorsoTappe = stato.percorsoTappe.filter(t => t.id !== c.id);
+    toast(`Percorso: rimosso "${c.nome}"`);
+  } else {
+    const tappa = {
+      id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key
+    };
+    stato.percorsoTappe.push(tappa);
+    toast(`Percorso: + "${c.nome}" (tappa ${stato.percorsoTappe.length})`);
+  }
+  salva();
+  aggiornaPunti();
+  renderListaCitta();
+  if (globo2d) globo2d.aggiorna();
+  /* dalla lista città: mantengo l'immagine sul punto invece di allontanare */
+  if (!esistente && globo2d) globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
+}
+
+function vistaAttualeAlt() {
+  if (globo2d) { const p = globo2d.pointOfView(); if (p && p.altitude != null) return p.altitude; }
+  return 0.1;
 }
 
 function toggleCitta(id, centra) {
@@ -1258,6 +1309,7 @@ function renderPannello() {
 
   const visitata = stato.visitateNazioni.has(f.key);
   const flag = f.meta && f.meta.flag ? `<span class="flag">${esc(f.meta.flag)}</span>` : '';
+  const inPercorsi = stato.modalita === 'percorsi';
 
   p.innerHTML = `
     <div class="p-head">
@@ -1265,19 +1317,20 @@ function renderPannello() {
       <h2>${esc(nomeNazione(f))}</h2>
       <button class="btn" id="p-chiudi">✕</button>
     </div>
-    <button class="btn-visita ${visitata ? 'attiva' : ''}" id="p-toggle"></button>
+    ${inPercorsi ? '' : `<button class="btn-visita ${visitata ? 'attiva' : ''}" id="p-toggle"></button>`}
     <input class="p-ricerca" id="p-ricerca" placeholder="Cerca città…" autocomplete="off" value="${esc(stato.query)}">
-    <div class="p-sub"><span>Città visitate</span><b id="p-count">—</b></div>
+    <div class="p-sub"><span>${inPercorsi ? 'Tappe del percorso — tocca le città per aggiungerle' : 'Città visitate'}</span><b id="p-count">—</b></div>
     <div class="p-lista" id="p-lista"></div>`;
 
   document.getElementById('p-chiudi').addEventListener('click', deseleziona);
-  document.getElementById('p-toggle').addEventListener('click', toggleNazione);
+  const btToggle = document.getElementById('p-toggle');
+  if (btToggle) btToggle.addEventListener('click', toggleNazione);
   document.getElementById('p-ricerca').addEventListener('input', e => {
     stato.query = e.target.value;
     renderListaCitta();
   });
 
-  aggiornaPulsanteVisita();
+  if (btToggle) aggiornaPulsanteVisita();
   renderListaCitta();
   aggiornaContatoreCitta();
   p.classList.add('aperta');
@@ -1342,6 +1395,10 @@ function aggiungiCittaManuale(nome, lat, lon, ottieniNomeNazione) {
   stato.visiteOrdine.push(id);
   stato.visiteData[id] = oggi();
   stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: 0 };
+  /* in modalità Percorsi la città aggiunta diventa anche una TAPPA del percorso */
+  if (stato.modalita === 'percorsi' && !stato.percorsoTappe.some(t => t.id === id)) {
+    stato.percorsoTappe.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key });
+  }
   salva();
   salvaCache();
   aggiornaStatistiche();
@@ -1402,44 +1459,44 @@ function renderListaCitta() {
   const el = document.getElementById('p-lista');
   if (!el || !stato.selezionata) return;
   const { filtrata, totale } = listaFiltrata();
-
-  /* In modalità Percorsi la lista segue l'ORDINE del percorso (le tappe
-     visitate prima in ordine di viaggio, poi le altre): così spostare
-     una tappa con le frecce riordina subito anche l'elenco. */
-  if (stato.modalita === 'percorsi') {
-    const pos = new Map();
-    stato.visiteOrdine.forEach((id, i) => pos.set(id, i));
-    filtrata.sort((a, b) => {
-      const va = stato.visitateCitta.has(a.id), vb = stato.visitateCitta.has(b.id);
-      if (va !== vb) return va ? -1 : 1;
-      const pa = pos.has(a.id) ? pos.get(a.id) : 1e9;
-      const pb = pos.has(b.id) ? pos.get(b.id) : 1e9;
-      return pa - pb;
-    });
-  }
+  const inPercorsi = stato.modalita === 'percorsi';
 
   if (!stato.pronte) {
     el.innerHTML = '<div class="vuoto">⏳ Elenco città in caricamento…</div>';
     return;
   }
 
+  /* In modalità Percorsi la lista segue l'ORDINE del percorso (le tappe della
+     nazione prima, in ordine di viaggio, poi le altre): così spostare una
+     tappa con le frecce riordina subito anche l'elenco. */
+  const posTappa = new Map();
+  if (inPercorsi) {
+    stato.percorsoTappe.forEach((t, i) => posTappa.set(t.id, i));
+    filtrata.sort((a, b) => {
+      const ta = posTappa.has(a.id), tb = posTappa.has(b.id);
+      if (ta !== tb) return ta ? -1 : 1;
+      if (ta) return posTappa.get(a.id) - posTappa.get(b.id);
+      return (b.pop || 0) - (a.pop || 0);
+    });
+  }
+
   let html = '';
-  const inPercorsi = stato.modalita === 'percorsi';
   if (!filtrata.length) {
     html += `<div class="vuoto">${totale ? 'Nessuna città trovata' : 'Nessuna città in elenco per questa nazione'}</div>`;
   } else {
     filtrata.slice(0, MAX_RIGHE).forEach(c => {
-      const vis = stato.visitateCitta.has(c.id);
-      const dataT = vis ? stato.visiteData[c.id] : '';
+      const vis = inPercorsi ? posTappa.has(c.id) : stato.visitateCitta.has(c.id);
+      const nTappa = posTappa.has(c.id) ? posTappa.get(c.id) + 1 : '';
       const frecce = (inPercorsi && vis) ? `<span class="frecce">
         <button class="f-up" data-msg="${c.id}">⇡</button>
         <button class="f-down" data-msg="${c.id}">⇣</button>
       </span>` : '';
-      html += `<div class="riga-citta ${vis ? 'visitata' : ''}" data-id="${c.id}">
+      const label = inPercorsi ? (nTappa ? '#' + nTappa : formattaPop(c.pop)) : formattaPop(c.pop);
+      html += `<div class="riga-citta ${vis ? (inPercorsi ? 'tappa' : 'visitata') : ''}" data-id="${c.id}">
         <span class="pallino"></span>
         <span class="info"><span class="nome">${esc(c.nome)}</span></span>
         ${frecce}
-        <span class="pop">${dataT ? dataT : formattaPop(c.pop)}</span>
+        <span class="pop">${label}</span>
       </div>`;
     });
     if (filtrata.length > MAX_RIGHE) {
@@ -1456,7 +1513,14 @@ function renderListaCitta() {
 
   el.innerHTML = html;
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
-    r.addEventListener('click', () => toggleCitta(r.dataset.id, true)));
+    r.addEventListener('click', () => {
+      if (inPercorsi) {
+        const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id];
+        if (c) toggleTappa(c);
+      } else {
+        toggleCitta(r.dataset.id, true);
+      }
+    }));
 
   el.querySelectorAll('.f-up').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
@@ -1474,16 +1538,15 @@ function renderListaCitta() {
   });
 }
 
-/* sposta la tappa del percorso (id) di una posizione (su = -1, giù = +1)
-   nell'ordine cronologico delle visite, con aggiornamento immediato
-   del disegno del percorso. */
+/* sposta una tappa del percorso (id) di una posizione (su = -1, giù = +1),
+   con aggiornamento immediato del disegno e della lista. */
 function spostaTappa(id, dir) {
-  const i = stato.visiteOrdine.indexOf(id);
+  const i = stato.percorsoTappe.findIndex(t => t.id === id);
   if (i < 0) return;
   const j = i + dir;
-  if (j < 0 || j >= stato.visiteOrdine.length) return;
-  stato.visiteOrdine.splice(i, 1);
-  stato.visiteOrdine.splice(j, 0, id);
+  if (j < 0 || j >= stato.percorsoTappe.length) return;
+  const [mossa] = stato.percorsoTappe.splice(i, 1);
+  stato.percorsoTappe.splice(j, 0, mossa);
   salva();
   if (globo2d) globo2d.aggiorna();
   renderListaCitta();
@@ -1498,8 +1561,13 @@ function aggiornaContatoreCitta() {
   const el = document.getElementById('p-count');
   if (!el || !stato.selezionata) return;
   const tutte = stato.cittaPerNazione.get(stato.selezionata) || [];
-  const vis = tutte.filter(c => stato.visitateCitta.has(c.id)).length;
-  el.textContent = stato.pronte ? `${vis}/${tutte.length}` : '…';
+  if (stato.modalita === 'percorsi') {
+    const vis = tutte.filter(c => stato.percorsoTappe.some(t => t.id === c.id)).length;
+    el.textContent = stato.pronte ? `${vis} tappe` : '…';
+  } else {
+    const vis = tutte.filter(c => stato.visitateCitta.has(c.id)).length;
+    el.textContent = stato.pronte ? `${vis}/${tutte.length}` : '…';
+  }
 }
 
 /* ---------------- statistiche ---------------- */
@@ -1667,12 +1735,13 @@ async function autocompletaCasa() {
 function costruisciBackup() {
   return {
     app: 'countries-been-3d',
-    versione: 2,
+    versione: 3,
     esportato: new Date().toISOString(),
     nazioni: [...stato.visitateNazioni],
     citta: [...stato.visitateCitta],
     ordine: stato.visiteOrdine,
     date: stato.visiteData,
+    percorso: stato.percorsoTappe,
     cacheCitta: stato.cacheCitta,
     casa: { nazione: stato.casaNazione, citta: stato.casaCitta }
   };
@@ -1732,6 +1801,8 @@ function importa(file) {
         stato.visiteOrdine = [...stato.visitateCitta];
         stato.visiteData = {};
       }
+      /* vista Percorsi: tappe del viaggio costruito dall'utente */
+      stato.percorsoTappe = Array.isArray(d.percorso) ? d.percorso : [];
       salva();
       salvaCache();
       salvaCasa();
@@ -1907,8 +1978,11 @@ document.getElementById('bt-imp').addEventListener('click', () =>
 document.getElementById('bt-percorsi').addEventListener('click', () => {
   stato.modalita = stato.modalita === 'mappa' ? 'percorsi' : 'mappa';
   document.getElementById('bt-percorsi').classList.toggle('attivo', stato.modalita === 'percorsi');
-  toast(stato.modalita === 'percorsi' ? '🗺️ Vista percorsi: linee dei tuoi viaggi (avvicinati a una nazione)' : '🗺️ Vista mappa');
+  toast(stato.modalita === 'percorsi'
+    ? '🗺️ Vista percorsi: seleziona le tappe del tuo viaggio (si collegano in ordine)'
+    : '🗺️ Vista mappa');
   if (globo2d) globo2d.aggiorna();
+  aggiornaPunti();
   if (stato.selezionata) renderListaCitta();
 });
 document.getElementById('imp-chiudi').addEventListener('click', () =>

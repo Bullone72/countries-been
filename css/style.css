@@ -45,6 +45,7 @@ html,body{margin:0;height:100%;overflow:hidden;color:#e8edf7;font-family:system-
 .riga-citta:active{background:rgba(255,255,255,.06)}
 .riga-citta .pallino{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.25);flex-shrink:0;transition:.2s}
 .riga-citta.visitata .pallino{background:#fbbf24;box-shadow:0 0 10px rgba(251,191,36,.55)}
+.riga-citta.tappa .pallino{background:#f97316;box-shadow:0 0 10px rgba(249,115,22,.6)}
 .riga-citta .info{flex:1;min-width:0;display:flex;flex-direction:column}
 .riga-citta .nome{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .riga-citta.visitata .nome{color:#fcd34d}
