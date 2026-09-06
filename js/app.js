@@ -723,8 +723,12 @@ function initGlobo(feats) {
         if (f0 && eMicrostato(f0)) { selezionaNazione(f0); return; }
         const c = cittaSotto(e.clientX, e.clientY);
         if (c) {
-          if (stato.modalita === 'percorsi') toggleTappa(c);
-          else toggleCitta(c.id);
+          try {
+            if (stato.modalita === 'percorsi') toggleTappa(c);
+            else toggleCitta(c.id);
+          } catch (err) {
+            toast('⚠️ ERRORE: ' + err.message + ' | stack: ' + (err.stack || '').split('\n')[0], 6000);
+          }
           return;
         }
         if (f0) selezionaNazione(f0);
@@ -1514,11 +1518,15 @@ function renderListaCitta() {
   el.innerHTML = html;
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => {
-      if (inPercorsi) {
-        const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id];
-        if (c) toggleTappa(c);
-      } else {
-        toggleCitta(r.dataset.id, true);
+      try {
+        if (inPercorsi) {
+          const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id];
+          if (c) toggleTappa(c);
+        } else {
+          toggleCitta(r.dataset.id, true);
+        }
+      } catch (err) {
+        toast('⚠️ ERRORE: ' + err.message + ' | ' + (err.stack || '').split('\n')[0], 6000);
       }
     }));
 
