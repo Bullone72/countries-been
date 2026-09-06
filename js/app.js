@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.24.0';
+const APP_VER = 'v1.24.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -1726,8 +1726,9 @@ function renderListaCitta() {
     if (t) toggleTappa(t);
   }));
 
-  el.querySelector('#aggiungi-citta').addEventListener('click', () => {
-    const nome = prompt('Nome della città:', q || '');
+  const elAggiungi = el.querySelector('#aggiungi-citta');
+  if (elAggiungi) elAggiungi.addEventListener('click', () => {
+    const nome = prompt('Nome della città:', (stato.query || '').trim());
     if (!nome) return;
     aggiungiCittaManuale(nome, null, null);
   });
