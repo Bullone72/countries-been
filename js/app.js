@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.13';
+const APP_VER = 'v1.21.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -15,6 +15,8 @@ const LS_NAZIONI = 'cb3_nazioni';
 const LS_CITTA   = 'cb3_citta';
 const LS_CACHE   = 'cb3_cache_citta';
 const LS_CASA    = 'cb3_casa';
+const LS_ORDINE  = 'cb3_visite_ordine';   // percorso: id in ordine di inserimento
+const LS_DATA    = 'cb3_visite_data';     // percorso: id -> 'YYYY-MM-DD'
 
 /* palette: colori ben distinti fra loro */
 const COL = {
@@ -37,9 +39,12 @@ const stato = {
   cacheCitta: {},
   visitateNazioni: new Set(),
   visitateCitta: new Set(),
+  visiteOrdine: [],
+  visiteData: {},
   casaNazione: null,   // key della nazione di residenza
   casaCitta: null,     // {id,nome,lat,lon} della città di residenza
   selezionata: null,
+  modalita: 'mappa',   // 'mappa' | 'percorsi' (percorso itinerante)
   query: '',
   pronte: false
 };
@@ -71,6 +76,14 @@ function hashId() {
   return 'p' + (h >>> 0).toString(36);
 }
 
+/* data di oggi in formato locale YYYY-MM-DD (solo data, senza orario):
+   usata per il timestamp delle visite nel percorso. */
+function oggi() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -91,6 +104,8 @@ function toast(msg, durata = 2600) {
 function salva() {
   localStorage.setItem(LS_NAZIONI, JSON.stringify([...stato.visitateNazioni]));
   localStorage.setItem(LS_CITTA, JSON.stringify([...stato.visitateCitta]));
+  try { localStorage.setItem(LS_ORDINE, JSON.stringify(stato.visiteOrdine)); } catch (e) {}
+  try { localStorage.setItem(LS_DATA, JSON.stringify(stato.visiteData)); } catch (e) {}
 }
 
 function salvaCache() {
@@ -110,6 +125,15 @@ function carica() {
     if (c) {
       stato.casaNazione = c.nazione || null;
       stato.casaCitta = c.citta || null;
+    }
+    stato.visiteOrdine = JSON.parse(localStorage.getItem(LS_ORDINE) || '[]');
+    stato.visiteData = JSON.parse(localStorage.getItem(LS_DATA) || '{}');
+    /* per gli utenti che hanno già visitato città prima dell'introduzione del
+       percorso: ricostruiamo l'ordine dal Set delle città visitate (senza data),
+       così il percorso funziona anche per le visite passate. */
+    if (!stato.visiteOrdine.length && stato.visitateCitta.size) {
+      stato.visiteOrdine = [...stato.visitateCitta];
+      try { localStorage.setItem(LS_ORDINE, JSON.stringify(stato.visiteOrdine)); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -368,6 +392,7 @@ function initGlobo(feats) {
     }
 
     /* città */
+    disegnaPercorso();
     disegnaPunti();
     disegnaNomi();
   }
@@ -463,8 +488,86 @@ function initGlobo(feats) {
     ctx.arcTo(x + w, y, x + w, y + h, r);
     ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
+  }
+
+  /* ---------------- percorso itinerante ---------------- */
+
+  const SOGLIA_PERCORSO = 0.16;   /* vicinanza minima per far vedere il percorso (regione per regione) */
+
+  /* Le tappe del percorso della nazione data, nell'ordine in cui sono state
+     segnate (stato.visiteOrdine). Restituisce array di {id,nome,lat,lon}. */
+  function tappePercorso(keyNazione) {
+    const mappa = stato.cittaPerNazione.get(keyNazione) || [];
+    const lista = [];
+    const viste = new Set();
+    for (const id of stato.visiteOrdine) {
+      if (!stato.visitateCitta.has(id)) continue;
+      if (viste.has(id)) continue;
+      let c = null;
+      for (const x of mappa) if (x.id === id) { c = x; break; }
+      if (!c) {
+        const cch = stato.cittaById.get(id) || stato.cacheCitta[id];
+        if (cch && cch.key === keyNazione) c = cch;
+        else if (cch && cch.lat != null) {
+          /* fallback: la cache salvata in passato può non avere la key.
+             Verifichiamo che la città abbia coordinate e che ricada davvero
+             in questa nazione (anticipando il comportamento di nazioneAlCentro). */
+          const g = { type: 'Point', coordinates: [cch.lon, cch.lat] };
+          const f = stato.featureByKey.get(keyNazione);
+          if (f && d3.geoContains(f, g)) c = cch;
+          else continue;
+        } else continue;
+      }
+      viste.add(id);
+      lista.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon });
+    }
+    return lista;
+  }
+
+  function disegnaPercorso() {
+    /* il percorso (linee dei viaggi) si vede SOLO nella vista Percorsi,
+       e solo da vicino (regione per regione) */
+    if (stato.modalita !== 'percorsi') return;
+    if (vista.alt > SOGLIA_PERCORSO) return;
+    let keyNazione = null;
+    if (stato.selezionata) keyNazione = stato.selezionata;
+    else {
+      const c = nazioneAlCentro();
+      if (c) keyNazione = c;
+    }
+    if (!keyNazione) return;
+    const tappe = tappePercorso(keyNazione);
+    if (tappe.length < 2) return;
+    /* linea di percorso da tappa a tappa, con piccole frecce di direzione
+       a metà di ogni segmento */
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < tappe.length - 1; i++) {
+      const a = puntoSchermo(tappe[i]);
+      const b = puntoSchermo(tappe[i + 1]);
+      if (!a || !b) continue;
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      /* freccia a metà */
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const ux = dx / len, uy = dy / len;
+        const px = -uy, py = ux;
+        ctx.beginPath();
+        ctx.moveTo(mx + ux * 6, my + uy * 6);
+        ctx.lineTo(mx + (-ux * 2 + px * 3), my + (-uy * 2 + py * 3));
+        ctx.moveTo(mx + ux * 6, my + uy * 6);
+        ctx.lineTo(mx + (-ux * 2 - px * 3), my + (-uy * 2 - py * 3));
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+    }
   }
 
   /* ---------------- interazione ---------------- */
@@ -733,6 +836,7 @@ function initGlobo(feats) {
     height(h) { if (h) { H = h; ridimensiona(); } return H; },
     debugCounts() { return { punti: punti.length, etichette: etichette.length }; },
     currentPoints() { return punti.slice(); },
+    aggiorna() { daRidisegnare = true; disegna(); },
     /* città più vicine al centro della vista corrente, a prescindere dalla
        nazione: così anche una nazione grande (es. Russia) con centro fuori
        schermo NON risulta vuota — le sue città entrano comunque nel pool.
@@ -1114,11 +1218,16 @@ function toggleCitta(id, centra) {
   const eraVisitata = stato.visitateCitta.has(id);
   if (eraVisitata) {
     stato.visitateCitta.delete(id);
+    const i = stato.visiteOrdine.indexOf(id);
+    if (i >= 0) stato.visiteOrdine.splice(i, 1);
+    delete stato.visiteData[id];
   } else {
     stato.visitateCitta.add(id);
+    stato.visiteOrdine.push(id);
+    stato.visiteData[id] = oggi();
     const c = stato.cittaById.get(id);
     if (c) {
-      stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: c.pop };
+      stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: c.pop, key: c.key };
       salvaCache();
     }
   }
@@ -1230,6 +1339,8 @@ function aggiungiCittaManuale(nome, lat, lon, ottieniNomeNazione) {
   if (!stato.cittaPerNazione.has(stato.selezionata)) stato.cittaPerNazione.set(stato.selezionata, []);
   stato.cittaPerNazione.get(stato.selezionata).push(c);
   stato.visitateCitta.add(id);
+  stato.visiteOrdine.push(id);
+  stato.visiteData[id] = oggi();
   stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: 0 };
   salva();
   salvaCache();
@@ -1292,21 +1403,43 @@ function renderListaCitta() {
   if (!el || !stato.selezionata) return;
   const { filtrata, totale } = listaFiltrata();
 
+  /* In modalità Percorsi la lista segue l'ORDINE del percorso (le tappe
+     visitate prima in ordine di viaggio, poi le altre): così spostare
+     una tappa con le frecce riordina subito anche l'elenco. */
+  if (stato.modalita === 'percorsi') {
+    const pos = new Map();
+    stato.visiteOrdine.forEach((id, i) => pos.set(id, i));
+    filtrata.sort((a, b) => {
+      const va = stato.visitateCitta.has(a.id), vb = stato.visitateCitta.has(b.id);
+      if (va !== vb) return va ? -1 : 1;
+      const pa = pos.has(a.id) ? pos.get(a.id) : 1e9;
+      const pb = pos.has(b.id) ? pos.get(b.id) : 1e9;
+      return pa - pb;
+    });
+  }
+
   if (!stato.pronte) {
     el.innerHTML = '<div class="vuoto">⏳ Elenco città in caricamento…</div>';
     return;
   }
 
   let html = '';
+  const inPercorsi = stato.modalita === 'percorsi';
   if (!filtrata.length) {
     html += `<div class="vuoto">${totale ? 'Nessuna città trovata' : 'Nessuna città in elenco per questa nazione'}</div>`;
   } else {
     filtrata.slice(0, MAX_RIGHE).forEach(c => {
       const vis = stato.visitateCitta.has(c.id);
+      const dataT = vis ? stato.visiteData[c.id] : '';
+      const frecce = (inPercorsi && vis) ? `<span class="frecce">
+        <button class="f-up" data-msg="${c.id}">⇡</button>
+        <button class="f-down" data-msg="${c.id}">⇣</button>
+      </span>` : '';
       html += `<div class="riga-citta ${vis ? 'visitata' : ''}" data-id="${c.id}">
         <span class="pallino"></span>
         <span class="info"><span class="nome">${esc(c.nome)}</span></span>
-        <span class="pop">${formattaPop(c.pop)}</span>
+        ${frecce}
+        <span class="pop">${dataT ? dataT : formattaPop(c.pop)}</span>
       </div>`;
     });
     if (filtrata.length > MAX_RIGHE) {
@@ -1325,11 +1458,35 @@ function renderListaCitta() {
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => toggleCitta(r.dataset.id, true)));
 
+  el.querySelectorAll('.f-up').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    spostaTappa(b.dataset.msg, -1);
+  }));
+  el.querySelectorAll('.f-down').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    spostaTappa(b.dataset.msg, +1);
+  }));
+
   el.querySelector('#aggiungi-citta').addEventListener('click', () => {
     const nome = prompt('Nome della città:', q || '');
     if (!nome) return;
     aggiungiCittaManuale(nome, null, null);
   });
+}
+
+/* sposta la tappa del percorso (id) di una posizione (su = -1, giù = +1)
+   nell'ordine cronologico delle visite, con aggiornamento immediato
+   del disegno del percorso. */
+function spostaTappa(id, dir) {
+  const i = stato.visiteOrdine.indexOf(id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= stato.visiteOrdine.length) return;
+  stato.visiteOrdine.splice(i, 1);
+  stato.visiteOrdine.splice(j, 0, id);
+  salva();
+  if (globo2d) globo2d.aggiorna();
+  renderListaCitta();
 }
 
 function aggiornaRigaCitta(id) {
@@ -1510,10 +1667,12 @@ async function autocompletaCasa() {
 function costruisciBackup() {
   return {
     app: 'countries-been-3d',
-    versione: 1,
+    versione: 2,
     esportato: new Date().toISOString(),
     nazioni: [...stato.visitateNazioni],
     citta: [...stato.visitateCitta],
+    ordine: stato.visiteOrdine,
+    date: stato.visiteData,
     cacheCitta: stato.cacheCitta,
     casa: { nazione: stato.casaNazione, citta: stato.casaCitta }
   };
@@ -1562,6 +1721,16 @@ function importa(file) {
       if (d.casa && typeof d.casa === 'object') {
         stato.casaNazione = d.casa.nazione || null;
         stato.casaCitta = d.casa.citta || null;
+      }
+      /* percorso: se nel backup ci sono, li carichiamo; altrimenti li
+         ricostruiamo in ordine casuale stabile (quello del Set) */
+      if (Array.isArray(d.ordine) && d.ordine.length) {
+        stato.visiteOrdine = d.ordine;
+        if (d.date && typeof d.date === 'object') stato.visiteData = d.date;
+        else stato.visiteData = {};
+      } else {
+        stato.visiteOrdine = [...stato.visitateCitta];
+        stato.visiteData = {};
       }
       salva();
       salvaCache();
@@ -1707,6 +1876,25 @@ window.addEventListener('error', e => {
     mostraDiagnostico('Errore: ' + e.message + ' (' + (e.filename || '?') + ')' );
 });
 
+/* SALVATAGGIO AUTOMATICO ALLA CHIUSURA/IN BACKGROUND: ogni modifica viene
+   già salvata al momento; qui garantiamo che nessuna variazione residua
+   vada persa quando si chiude l'app (o si passa in background). */
+(function salvataggioSuChiusura() {
+  const salvaTutto = () => {
+    try {
+      salva();
+      salvaCache();
+      salvaCasa();
+      autoBackup();
+    } catch (e) {}
+  };
+  window.addEventListener('pagehide', salvaTutto);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') salvaTutto();
+  });
+  document.addEventListener('freeze', salvaTutto);
+})();
+
 (function verificaWebGL() {
   /* il nuovo mappamondo 2D non richiede WebGL: nessun controllo necessario */
 })();
@@ -1716,6 +1904,13 @@ window.addEventListener('error', e => {
 /* pulsante ⚙️ apre le impostazioni */
 document.getElementById('bt-imp').addEventListener('click', () =>
   document.getElementById('modale-imp').classList.add('aperta'));
+document.getElementById('bt-percorsi').addEventListener('click', () => {
+  stato.modalita = stato.modalita === 'mappa' ? 'percorsi' : 'mappa';
+  document.getElementById('bt-percorsi').classList.toggle('attivo', stato.modalita === 'percorsi');
+  toast(stato.modalita === 'percorsi' ? '🗺️ Vista percorsi: linee dei tuoi viaggi (avvicinati a una nazione)' : '🗺️ Vista mappa');
+  if (globo2d) globo2d.aggiorna();
+  if (stato.selezionata) renderListaCitta();
+});
 document.getElementById('imp-chiudi').addEventListener('click', () =>
   document.getElementById('modale-imp').classList.remove('aperta'));
 document.getElementById('modale-imp').addEventListener('click', e => {

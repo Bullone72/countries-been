@@ -20,6 +20,7 @@ html,body{margin:0;height:100%;overflow:hidden;color:#e8edf7;font-family:system-
   background:rgba(13,20,40,.82);color:#e8edf7;font-size:18px;display:flex;align-items:center;justify-content:center;
   cursor:pointer;transition:.15s;backdrop-filter:blur(8px)}
 .btn:active{transform:scale(.92)}
+.btn.attivo{background:rgba(99,102,241,.85);border-color:#818cf8;box-shadow:0 0 12px rgba(99,102,241,.5)}
 
 /* ---------- Pannello nazione ---------- */
 #pannello{position:fixed;left:0;right:0;bottom:0;z-index:30;transform:translateY(105%);
@@ -48,6 +49,10 @@ html,body{margin:0;height:100%;overflow:hidden;color:#e8edf7;font-family:system-
 .riga-citta .nome{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .riga-citta.visitata .nome{color:#fcd34d}
 .riga-citta .pop{font-size:11px;color:#8fa0c4}
+.riga-citta .frecce{display:flex;gap:4px;flex-shrink:0}
+.riga-citta .frecce button{width:26px;height:26px;border-radius:6px;border:1px solid rgba(120,160,255,.3);
+  background:rgba(255,255,255,.08);color:#cbd5e1;font-size:13px;cursor:pointer}
+.riga-citta .frecce button:active{background:rgba(129,140,248,.4)}
 .riga-citta[data-nazione]{cursor:pointer}
 .vuoto{padding:18px;text-align:center;color:#7f90b5;font-size:13px}
 
