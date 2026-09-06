@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.20.12';
+const APP_VER = 'v1.20.13';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -388,19 +388,42 @@ function initGlobo(feats) {
   }
 
   function disegnaPunti() {
+    /* MERGE visivo: quando tante piccole città cadono troppo vicine a schermo
+       (tipico degli stati molto popolati), ne disegniamo solo la più importante,
+       evitando un ammasso di pallini sovrapposti. Adatto la soglia allo zoom:
+       da lontano fondiamo di più (pallini sparsi), vicino fondiamo meno. */
+    const sogliaMerge = Math.max(10, Math.min(24, 16 * vista.alt));
+    const passo = Math.max(3, sogliaMerge * 0.6);
+    const grid = new Map();
+    const key = (i, j) => i * 10000 + j;
     for (const c of punti) {
       const p = puntoSchermo(c);
       if (!p) continue;
+      const cellaX = Math.floor(p[0] / passo), cellaY = Math.floor(p[1] / passo);
+      let migliore = null, migliorePeso = -1;
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          const lista = grid.get(key(cellaX + i, cellaY + j));
+          if (!lista) continue;
+          for (const o of lista) {
+            const d = Math.hypot(o.p[0] - p[0], o.p[1] - p[1]);
+            if (d < sogliaMerge && o.peso > migliorePeso) { migliore = o; migliorePeso = o.peso; }
+          }
+        }
+      }
       const casa = eCasa(c.id);
       const visitata = stato.visitateCitta.has(c.id);
       const cap = !casa && !!c.cap;
+      const peso = casa ? 4 : (cap ? 3 : (visitata ? 2 : 1));
+      if (migliore && migliore.peso >= peso) continue;   // un altro più importante lo copre
+      if (migliore) grid.delete(key(Math.floor(migliore.p[0] / passo), Math.floor(migliore.p[1] / passo)));
+      if (!grid.has(key(cellaX, cellaY))) grid.set(key(cellaX, cellaY), []);
+      grid.get(key(cellaX, cellaY)).push({ p, peso });
       const r = casa ? 2.6 : (cap ? 2.0 : (visitata ? 1.5 : 1.2));
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
       ctx.fillStyle = colorePunto(c);
       ctx.fill();
-      /* bordo chiaro su TUTTI i punti: rende visibili anche i pallini neri
-         (non visitati) sullo sfondo scuro dell'oceano */
       ctx.strokeStyle = cap ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.85)';
       ctx.lineWidth = (visitata || casa || cap) ? 1.1 : 0.8;
       ctx.stroke();
@@ -410,14 +433,10 @@ function initGlobo(feats) {
   function disegnaNomi() {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    /* Nazione selezionata, o zoom molto profondo: disegno il nome di OGNI
-       città (senza anti-accavallamento). L'utente a zoom massimo vuole poter
-       leggere i nomi anche dei pallini senza selezionare. Vista globale da
-       lontano: anti-accavallamento per non riempire lo schermo.
-       A zoom profondo l'area visibile è piccola -> i pallini sono pochi,
-       quindi possiamo disegnare tutti i nomi in modo leggibile. */
-    const vicino = vista.alt < 0.06 && !stato.selezionata;
-    const usaCollision = !stato.selezionata && !vicino;
+    /* Con nazione selezionata: disegno il nome di OGNI città (senza anti-accavallamento,
+       l'utente le vuole vedere tutte). Vista globale: anti-accavallamento SEMPRE,
+       così i nomi delle città piccole in stati popolati non si sovrappongono. */
+    const usaCollision = !stato.selezionata;
     const occupati = [];
     const collida = (r) => occupati.some(o => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]);
     for (const e of etichette) {
@@ -525,9 +544,9 @@ function initGlobo(feats) {
       const dy = e.clientY - ultimoY;
       /* velocità angolare: un pixel = altrettanti gradi del globo (scala) */
       const gradiPerPx = 360 / (scalaAttuale() * Math.PI * 2);
-      /* a zoom molto profondo la scala è enorme: lo stesso drag farebbe
-         volare il globo lontano. Attenua la rotazione quanto più sei vicino. */
-      const attenuazione = Math.max(0.25, Math.min(1, Math.sqrt(vista.alt / 0.5)));
+      /* a zoom molto profondo la scala è enorme: attenua un po' la rotazione
+         ma senza renderla troppo lenta (il tap su bersaglio già non ruota) */
+      const attenuazione = Math.max(0.65, Math.min(1, Math.sqrt(vista.alt / 0.8)));
       const rot = gradiPerPx * controlli.rotateSpeed * attenuazione;
       vista.lon -= dx * rot;
       vista.lat = Math.max(-89.99, Math.min(89.99, vista.lat + dy * rot));
