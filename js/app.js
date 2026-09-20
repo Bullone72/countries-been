@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.25.0';
+const APP_VER = 'v1.25.1';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -328,20 +328,23 @@ function carica() {
     /* vista Percorsi: carichiamo i viaggi salvati (più di uno, ognuno con
        nome e tappe). Se mancano, restano vuoti (si costruiscono da zero). */
     const vj = JSON.parse(localStorage.getItem(LS_VIAGGI) || 'null');
-    if (vj && Array.isArray(vj.viaggi)) {
+    /* compatibilità: l'utente prima aveva un solo percorso (LS_PERCORSO).
+       Se i viaggi sono vuoti ma c'è ancora quel percorso, lo ripristiniamo
+       come PRIMO viaggio (col nome di default), così non si perde nulla. */
+    const vecchio = JSON.parse(localStorage.getItem(LS_PERCORSO) || '[]');
+    const vecchioValido = Array.isArray(vecchio) && vecchio.length;
+    if (vj && Array.isArray(vj.viaggi) && vj.viaggi.length) {
       stato.viaggi = vj.viaggi.filter(v => v && typeof v === 'object' && Array.isArray(v.tappe));
-      stato.viaggioAttivo = (vj.attivo && stato.viaggi.some(v => v.nome === vj.attivo)) ? vj.attivo : null;
+      stato.viaggioAttivo = (vj.attivo && stato.viaggi.some(v => v.nome === vj.attivo)) ? vj.attivo : stato.viaggi[0].nome;
+    } else if (vecchioValido) {
+      stato.viaggi = [{ nome: 'Il mio viaggio', tappe: vecchio }];
+      stato.viaggioAttivo = 'Il mio viaggio';
+      try {
+        localStorage.setItem(LS_VIAGGI, JSON.stringify({ viaggi: stato.viaggi, attivo: stato.viaggioAttivo }));
+      } catch (e) {}
     } else {
-      /* compatibilità: l'utente prima aveva un solo percorso (LS_PERCORSO):
-         lo convertiamo in un viaggio col nome di default */
-      const vecchio = JSON.parse(localStorage.getItem(LS_PERCORSO) || '[]');
-      if (Array.isArray(vecchio) && vecchio.length) {
-        stato.viaggi = [{ nome: 'Il mio viaggio', tappe: vecchio }];
-        stato.viaggioAttivo = 'Il mio viaggio';
-      } else {
-        stato.viaggi = [];
-        stato.viaggioAttivo = null;
-      }
+      stato.viaggi = [];
+      stato.viaggioAttivo = null;
     }
     /* per gli utenti che hanno già visitato città prima dell'introduzione del
        percorso: ricostruiamo l'ordine dal Set delle città visitate (senza data),
@@ -478,6 +481,21 @@ function viaggioAttivoObj() {
 function tappeAttive() {
   const v = viaggioAttivoObj();
   return v ? v.tappe : [];
+}
+
+/* periodo del viaggio, in formato italiano gg/mm/aaaa (solo date, senza ora) */
+function formattaDataISO(iso) {
+  if (!iso) return '';
+  const p = String(iso).split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+}
+
+function periodoLab(v) {
+  if (!v) return '';
+  if (v.da && v.a) return `${formattaDataISO(v.da)} – ${formattaDataISO(v.a)}`;
+  if (v.da) return 'dal ' + formattaDataISO(v.da);
+  if (v.a) return 'fino al ' + formattaDataISO(v.a);
+  return '';
 }
 
 function nuovoViaggio(nome) {
@@ -1487,14 +1505,13 @@ function puntiVisibili() {
   }
 
   /* Nella vista Percorsi le TAPPE del viaggio attivo compaiono SEMPRE
-     (è il contenuto della vista: SOLO questo viaggio, non tutti). */
+     (è il contenuto della vista: SOLO questo viaggio, non tutti).
+     NB: la CASA non compare qui: in vista percorsi ha senso solo vedere
+     le tappe del viaggio, non il punto "dove vivo". */
   if (stato.modalita === 'percorsi') {
     for (const t of tappeAttive()) {
       push(stato.cittaById.get(t.id) || stato.cacheCitta[t.id] ||
            { id: t.id, nome: t.nome, lat: t.lat, lon: t.lon, pop: 0, key: t.key });
-    }
-    if (stato.casaCitta) {
-      push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
     }
     if (parchiVisibili) PARCHI_MONDO.forEach(p => push(p));
   }
@@ -1886,15 +1903,22 @@ function renderListaCitta() {
         const attivo = v.nome === stato.viaggioAttivo;
         html += `<div class="riga-citta viag ${attivo ? 'nel-percorso' : ''}" data-nome="${esc(v.nome)}">
           <span class="info"><span class="nome">${attivo ? '🗺️ ' : ''}${esc(v.nome)}</span>
-            <span class="pop">${v.tappe.length} tappa${v.tappe.length === 1 ? '' : 'e'}</span></span>
+            <span class="pop">${v.tappe.length} ${v.tappe.length === 1 ? 'tappa' : 'tappe'}${periodoLab(v) ? ' · ' + periodoLab(v) : ''}</span></span>
           <span class="frecce">
             <button class="v-ren" data-nome="${esc(v.nome)}">✏️</button>
             <button class="v-rem" data-nome="${esc(v.nome)}">✕</button>
           </span>
         </div>`;
+        /* per il viaggio ATTIVO: editor del periodo (solo date, senza ora) */
+        if (attivo) {
+          html += `<div class="v-periodo" data-nome="${esc(v.nome)}">
+            <label>Dal <input type="date" class="v-da" data-nome="${esc(v.nome)}" value="${esc(v.da || '')}"></label>
+            <label>Al <input type="date" class="v-a" data-nome="${esc(v.nome)}" value="${esc(v.a || '')}"></label>
+          </div>`;
+        }
       });
       html += '</div>';
-      html += '<div class="vuoto" style="margin:2px 0 6px">Tocca un viaggio per vederlo sul globo · ✏️ per rinominarlo, ✕ per eliminarlo</div>';
+      html += '<div class="vuoto" style="margin:2px 0 6px">Tocca un viaggio per vederlo sul globo · ✏️ per rinominarlo, ✕ per eliminarlo · 📅 per il periodo, tocca "Dal/Al"</div>';
     } else {
       html += '<div class="vuoto">Non hai ancora viaggi. Tocca le città e i parchi sul globo per creare il primo</div>';
     }
@@ -2015,6 +2039,25 @@ function renderListaCitta() {
     e.stopPropagation();
     eliminaViaggio(b.dataset.nome);
   }));
+
+  /* periodo del viaggio (solo date): "Dal" e "Al" */
+  const impostaData = (inp, campo) => {
+    const v = stato.viaggi.find(x => x.nome === inp.dataset.nome);
+    if (!v) return;
+    if (campo === 'da' && inp.value && v.a && inp.value > v.a) {
+      toast('La data di inizio è dopo la fine del viaggio', 3000);
+      return;
+    }
+    if (campo === 'a' && inp.value && v.da && inp.value < v.da) {
+      toast('La data di fine è prima dell\'inizio del viaggio', 3000);
+      return;
+    }
+    v[campo] = inp.value || null;
+    salva();
+    renderListaCitta();
+  };
+  el.querySelectorAll('.v-da').forEach(inp => inp.addEventListener('change', () => impostaData(inp, 'da')));
+  el.querySelectorAll('.v-a').forEach(inp => inp.addEventListener('change', () => impostaData(inp, 'a')));
 
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => {
