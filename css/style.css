@@ -69,6 +69,15 @@ html,body{margin:0;height:100%;overflow:hidden;color:#e8edf7;font-family:system-
 .int-tappe .t-num::after{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:#f97316;margin-left:2px;vertical-align:2px}
 .int-tappe .t-rem{color:#f87171;font-size:16px;padding:6px;flex-shrink:0;cursor:pointer;border-radius:8px}
 .int-tappe .t-rem:active{background:rgba(248,113,113,.2)}
+.int-viaggi{border:1px solid rgba(139,92,246,.25);border-radius:12px;margin:0 6px;background:rgba(139,92,246,.06);overflow:hidden}
+.int-viaggi .riga-citta{border-bottom:1px solid rgba(139,92,246,.15);border-radius:0}
+.int-viaggi .riga-citta:last-child{border-bottom:none}
+.int-viaggi .riga-citta.nel-percorso .nome{color:#fde68a}
+.int-viaggi .riga-citta .nome{color:#ddd6fe}
+.int-viaggi .v-rem{color:#f87171;font-size:16px;padding:6px;flex-shrink:0;cursor:pointer;border-radius:8px;background:none;border:none}
+.int-viaggi .v-rem:active{background:rgba(248,113,113,.2)}
+.int-viaggi .v-ren{color:#a5b4fc;font-size:15px;padding:6px;flex-shrink:0;cursor:pointer;border-radius:8px;background:none;border:none}
+.int-viaggi .v-ren:active{background:rgba(129,140,248,.3)}
 
 /* dove vivo */
 .riga-casa{cursor:pointer;color:#c4b5fd}

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.24.3';
+const APP_VER = 'v1.25.0';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -17,7 +17,8 @@ const LS_CACHE   = 'cb3_cache_citta';
 const LS_CASA    = 'cb3_casa';
 const LS_ORDINE  = 'cb3_visite_ordine';   // percorso: id in ordine di inserimento
 const LS_DATA    = 'cb3_visite_data';     // percorso: id -> 'YYYY-MM-DD'
-const LS_PERCORSO = 'cb3_percorso';       // vista Percorsi: tappe del viaggio
+const LS_VIAGGI  = 'cb3_viaggi';          // vista Percorsi: ELENCO dei viaggi salvati
+/* LS_PERCORSO (cb3_percorso) resta come compatibilità: ultimo viaggio attivo */
 
 /* palette: colori ben distinti fra loro */
 const COL = {
@@ -44,7 +45,10 @@ const stato = {
   visitateCitta: new Set(),
   visiteOrdine: [],
   visiteData: {},
-  percorsoTappe: [],   // vista Percorsi: tappe del viaggio {id,nome,lat,lon,key} in ordine
+  /* vista Percorsi: ELENCO dei viaggi salvati. Ogni viaggio ha un nome scelto
+     dall'utente e la lista ordinata delle sue tappe {id,nome,lat,lon,key}. */
+  viaggi: [],
+  viaggioAttivo: null,   // nome del viaggio che stai modificando/guardando
   casaNazione: null,   // key della nazione di residenza
   casaCitta: null,     // {id,nome,lat,lon} della città di residenza
   selezionata: null,
@@ -53,61 +57,193 @@ const stato = {
   pronte: false
 };
 
-/* Parchi nazionali USA: i principali e più belli, come punti selezionabili
-   (specie per gli itinerari nella vista Percorsi). key = 'c840' (USA). */
-const PARCHI_USA = [
-  { nome: 'Yellowstone', lat: 44.59, lon: -110.50 },
-  { nome: 'Grand Teton', lat: 43.80, lon: -110.70 },
-  { nome: 'Yosemite', lat: 37.85, lon: -119.55 },
-  { nome: 'Sequoia', lat: 36.55, lon: -118.75 },
-  { nome: 'Kings Canyon', lat: 36.80, lon: -118.55 },
-  { nome: 'Death Valley', lat: 36.51, lon: -117.13 },
-  { nome: 'Joshua Tree', lat: 33.90, lon: -115.90 },
-  { nome: 'Zion', lat: 37.30, lon: -113.05 },
-  { nome: 'Bryce Canyon', lat: 37.60, lon: -112.20 },
-  { nome: 'Arches', lat: 38.73, lon: -109.60 },
-  { nome: 'Canyonlands', lat: 38.33, lon: -109.88 },
-  { nome: 'Capitol Reef', lat: 38.20, lon: -111.17 },
-  { nome: 'Grand Canyon', lat: 36.11, lon: -112.11 },
-  { nome: 'Petrified Forest', lat: 35.07, lon: -109.78 },
-  { nome: 'Saguaro', lat: 32.25, lon: -110.50 },
-  { nome: 'Rocky Mountain', lat: 40.34, lon: -105.68 },
-  { nome: 'Mesa Verde', lat: 37.23, lon: -108.46 },
-  { nome: 'Great Sand Dunes', lat: 37.73, lon: -105.51 },
-  { nome: 'Glacier', lat: 48.76, lon: -113.79 },
-  { nome: 'Mount Rainier', lat: 46.85, lon: -121.76 },
-  { nome: 'Olympic', lat: 47.80, lon: -123.60 },
-  { nome: 'North Cascades', lat: 48.77, lon: -121.30 },
-  { nome: 'Crater Lake', lat: 42.87, lon: -122.17 },
-  { nome: 'Redwood', lat: 41.31, lon: -124.00 },
-  { nome: 'Lassen Volcanic', lat: 40.49, lon: -121.51 },
-  { nome: 'Channel Islands', lat: 34.01, lon: -119.80 },
-  { nome: 'Pinnacles', lat: 36.49, lon: -121.18 },
-  { nome: 'Badlands', lat: 43.86, lon: -102.34 },
-  { nome: 'Wind Cave', lat: 43.57, lon: -103.44 },
-  { nome: 'Theodore Roosevelt', lat: 46.98, lon: -103.45 },
-  { nome: 'Big Bend', lat: 29.25, lon: -103.25 },
-  { nome: 'Guadalupe Mountains', lat: 31.92, lon: -104.86 },
-  { nome: 'Carlsbad Caverns', lat: 32.15, lon: -104.56 },
-  { nome: 'White Sands', lat: 32.78, lon: -106.17 },
-  { nome: 'Great Smoky Mountains', lat: 35.65, lon: -83.51 },
-  { nome: 'Shenandoah', lat: 38.53, lon: -78.35 },
-  { nome: 'Acadia', lat: 44.34, lon: -68.27 },
-  { nome: 'Everglades', lat: 25.29, lon: -80.90 },
-  { nome: 'Dry Tortugas', lat: 24.63, lon: -82.87 },
-  { nome: 'Isle Royale', lat: 48.00, lon: -88.83 },
-  { nome: 'Voyageurs', lat: 48.48, lon: -92.84 },
-  { nome: 'Cuyahoga Valley', lat: 41.24, lon: -81.55 },
-  { nome: 'Mammoth Cave', lat: 37.19, lon: -86.10 },
-  { nome: 'Haleakalā', lat: 20.71, lon: -156.25 },
-  { nome: 'Hawaii Volcanoes', lat: 19.41, lon: -155.28 },
-  { nome: 'Denali', lat: 63.07, lon: -151.00 },
-  { nome: 'Kenai Fjords', lat: 59.81, lon: -150.37 },
-  { nome: 'Glacier Bay', lat: 58.66, lon: -136.16 },
-  { nome: 'Wrangell-St. Elias', lat: 61.00, lon: -142.00 }
+/* Parchi nazionali più famosi del MONDO (selezionabili, specie per costruire
+   gli itinerari nella vista Percorsi). Ogni parco ha il codice ISO della nazione
+   di appartenenza (es. 'c840' = USA, 'c484' = Messico, 'c036' = Australia...). */
+const PARCHI_MONDO = [
+  /* ---------- Nord America: USA ---------- */
+  { nome: 'Yellowstone', lat: 44.59, lon: -110.50, key: 'c840' },
+  { nome: 'Grand Teton', lat: 43.80, lon: -110.70, key: 'c840' },
+  { nome: 'Yosemite', lat: 37.85, lon: -119.55, key: 'c840' },
+  { nome: 'Sequoia', lat: 36.55, lon: -118.75, key: 'c840' },
+  { nome: 'Kings Canyon', lat: 36.80, lon: -118.55, key: 'c840' },
+  { nome: 'Death Valley', lat: 36.51, lon: -117.13, key: 'c840' },
+  { nome: 'Joshua Tree', lat: 33.90, lon: -115.90, key: 'c840' },
+  { nome: 'Zion', lat: 37.30, lon: -113.05, key: 'c840' },
+  { nome: 'Bryce Canyon', lat: 37.60, lon: -112.20, key: 'c840' },
+  { nome: 'Arches', lat: 38.73, lon: -109.60, key: 'c840' },
+  { nome: 'Canyonlands', lat: 38.33, lon: -109.88, key: 'c840' },
+  { nome: 'Capitol Reef', lat: 38.20, lon: -111.17, key: 'c840' },
+  { nome: 'Grand Canyon', lat: 36.11, lon: -112.11, key: 'c840' },
+  { nome: 'Petrified Forest', lat: 35.07, lon: -109.78, key: 'c840' },
+  { nome: 'Saguaro', lat: 32.25, lon: -110.50, key: 'c840' },
+  { nome: 'Rocky Mountain', lat: 40.34, lon: -105.68, key: 'c840' },
+  { nome: 'Mesa Verde', lat: 37.23, lon: -108.46, key: 'c840' },
+  { nome: 'Great Sand Dunes', lat: 37.73, lon: -105.51, key: 'c840' },
+  { nome: 'Glacier', lat: 48.76, lon: -113.79, key: 'c840' },
+  { nome: 'Mount Rainier', lat: 46.85, lon: -121.76, key: 'c840' },
+  { nome: 'Olympic', lat: 47.80, lon: -123.60, key: 'c840' },
+  { nome: 'North Cascades', lat: 48.77, lon: -121.30, key: 'c840' },
+  { nome: 'Crater Lake', lat: 42.87, lon: -122.17, key: 'c840' },
+  { nome: 'Redwood', lat: 41.31, lon: -124.00, key: 'c840' },
+  { nome: 'Lassen Volcanic', lat: 40.49, lon: -121.51, key: 'c840' },
+  { nome: 'Channel Islands', lat: 34.01, lon: -119.80, key: 'c840' },
+  { nome: 'Pinnacles', lat: 36.49, lon: -121.18, key: 'c840' },
+  { nome: 'Badlands', lat: 43.86, lon: -102.34, key: 'c840' },
+  { nome: 'Wind Cave', lat: 43.57, lon: -103.44, key: 'c840' },
+  { nome: 'Theodore Roosevelt', lat: 46.98, lon: -103.45, key: 'c840' },
+  { nome: 'Big Bend', lat: 29.25, lon: -103.25, key: 'c840' },
+  { nome: 'Guadalupe Mountains', lat: 31.92, lon: -104.86, key: 'c840' },
+  { nome: 'Carlsbad Caverns', lat: 32.15, lon: -104.56, key: 'c840' },
+  { nome: 'White Sands', lat: 32.78, lon: -106.17, key: 'c840' },
+  { nome: 'Great Smoky Mountains', lat: 35.65, lon: -83.51, key: 'c840' },
+  { nome: 'Shenandoah', lat: 38.53, lon: -78.35, key: 'c840' },
+  { nome: 'Acadia', lat: 44.34, lon: -68.27, key: 'c840' },
+  { nome: 'Everglades', lat: 25.29, lon: -80.90, key: 'c840' },
+  { nome: 'Dry Tortugas', lat: 24.63, lon: -82.87, key: 'c840' },
+  { nome: 'Isle Royale', lat: 48.00, lon: -88.83, key: 'c840' },
+  { nome: 'Voyageurs', lat: 48.48, lon: -92.84, key: 'c840' },
+  { nome: 'Cuyahoga Valley', lat: 41.24, lon: -81.55, key: 'c840' },
+  { nome: 'Mammoth Cave', lat: 37.19, lon: -86.10, key: 'c840' },
+  { nome: 'Haleakalā', lat: 20.71, lon: -156.25, key: 'c840' },
+  { nome: 'Hawaii Volcanoes', lat: 19.41, lon: -155.28, key: 'c840' },
+  { nome: 'Denali', lat: 63.07, lon: -151.00, key: 'c840' },
+  { nome: 'Kenai Fjords', lat: 59.81, lon: -150.37, key: 'c840' },
+  { nome: 'Glacier Bay', lat: 58.66, lon: -136.16, key: 'c840' },
+  { nome: 'Wrangell-St. Elias', lat: 61.00, lon: -142.00, key: 'c840' },
+  /* ---------- Nord America: Canada ---------- */
+  { nome: 'Banff', lat: 51.50, lon: -116.05, key: 'c124' },
+  { nome: 'Jasper', lat: 52.87, lon: -118.08, key: 'c124' },
+  { nome: 'Yoho', lat: 51.50, lon: -116.48, key: 'c124' },
+  { nome: 'Gros Morne', lat: 49.70, lon: -57.75, key: 'c124' },
+  { nome: 'Cape Breton Highlands', lat: 46.74, lon: -60.55, key: 'c124' },
+  /* ---------- Nord America: Messico ---------- */
+  { nome: 'Cozumel Reefs', lat: 20.35, lon: -87.00, key: 'c484' },
+  { nome: 'Cañon del Sumidero', lat: 16.83, lon: -93.09, key: 'c484' },
+  { nome: 'Nevado de Toluca', lat: 19.11, lon: -99.76, key: 'c484' },
+  /* ---------- Sud America ---------- */
+  { nome: 'Torres del Paine', lat: -50.94, lon: -73.41, key: 'c152' },
+  { nome: 'Los Glaciares', lat: -49.33, lon: -73.05, key: 'c032' },
+  { nome: 'Nahuel Huapi', lat: -41.07, lon: -71.52, key: 'c032' },
+  { nome: 'Iguazú', lat: -25.69, lon: -54.44, key: 'c032' },
+  { nome: 'Galápagos', lat: -0.45, lon: -90.90, key: 'c218' },
+  { nome: 'Cotopaxi', lat: -0.66, lon: -78.43, key: 'c218' },
+  { nome: 'Manu', lat: -11.90, lon: -71.40, key: 'c604' },
+  { nome: 'Huascarán', lat: -9.12, lon: -77.60, key: 'c604' },
+  { nome: 'Canaima', lat: 6.05, lon: -62.85, key: 'c862' },
+  { nome: 'Tayrona', lat: 11.33, lon: -74.09, key: 'c170' },
+  { nome: 'Chiribiquete', lat: 0.55, lon: -72.67, key: 'c170' },
+  { nome: 'Lençóis Maranhenses', lat: -2.48, lon: -43.13, key: 'c076' },
+  { nome: 'Chapada Diamantina', lat: -12.85, lon: -41.30, key: 'c076' },
+  { nome: 'Fernando de Noronha', lat: -3.85, lon: -32.42, key: 'c076' },
+  { nome: 'Madidi', lat: -13.05, lon: -68.90, key: 'c068' },
+  { nome: 'Corcovado', lat: 8.54, lon: -83.58, key: 'c188' },
+  { nome: 'Rodrigo Facio', lat: 9.90, lon: -84.00, key: 'c188' },
+  /* ---------- Europa ---------- */
+  { nome: 'Vatnajökull', lat: 64.42, lon: -16.98, key: 'c352' },
+  { nome: 'Þingvellir', lat: 64.26, lon: -21.13, key: 'c352' },
+  { nome: 'Plitvice', lat: 44.88, lon: 15.62, key: 'c191' },
+  { nome: 'Krka', lat: 43.85, lon: 15.97, key: 'c191' },
+  { nome: 'Teide', lat: 28.27, lon: -16.61, key: 'c724' },
+  { nome: 'Ordesa y Monte Perdido', lat: 42.67, lon: -0.06, key: 'c724' },
+  { nome: 'Picos de Europa', lat: 43.23, lon: -4.85, key: 'c724' },
+  { nome: 'Vanoise', lat: 45.35, lon: 6.85, key: 'c250' },
+  { nome: 'Mercantour', lat: 44.15, lon: 7.20, key: 'c250' },
+  { nome: 'Calanques', lat: 43.21, lon: 5.42, key: 'c250' },
+  { nome: 'Swiss National Park', lat: 46.66, lon: 10.19, key: 'c756' },
+  { nome: 'Hohe Tauern', lat: 47.12, lon: 12.41, key: 'c040' },
+  { nome: 'Bavarian Forest', lat: 48.97, lon: 13.38, key: 'c276' },
+  { nome: 'Berchtesgaden', lat: 47.57, lon: 12.96, key: 'c276' },
+  { nome: 'Białowieża', lat: 52.75, lon: 23.86, key: 'c616' },
+  { nome: 'Tatry', lat: 49.25, lon: 19.95, key: 'c616' },
+  { nome: 'Šumava', lat: 48.95, lon: 13.60, key: 'c203' },
+  { nome: 'Triglav', lat: 46.35, lon: 13.77, key: 'c705' },
+  { nome: 'Gran Paradiso', lat: 45.52, lon: 7.26, key: 'c380' },
+  { nome: 'Dolomiti Bellunesi', lat: 46.18, lon: 12.03, key: 'c380' },
+  { nome: 'Stelvio', lat: 46.50, lon: 10.55, key: 'c380' },
+  { nome: 'Circeo', lat: 41.25, lon: 13.06, key: 'c380' },
+  { nome: 'Sarek', lat: 67.30, lon: 17.70, key: 'c752' },
+  { nome: 'Jotunheimen', lat: 61.57, lon: 8.40, key: 'c578' },
+  { nome: 'Rondane', lat: 61.90, lon: 9.80, key: 'c578' },
+  { nome: 'Abisko', lat: 68.32, lon: 18.81, key: 'c752' },
+  { nome: 'Oulanka', lat: 66.46, lon: 29.32, key: 'c246' },
+  { nome: 'Urho Kekkonen', lat: 68.10, lon: 27.40, key: 'c246' },
+  { nome: 'Peneda-Gerês', lat: 41.78, lon: -8.20, key: 'c620' },
+  { nome: 'Göreme', lat: 38.64, lon: 34.83, key: 'c792' },
+  { nome: 'Lake District', lat: 54.47, lon: -3.08, key: 'c826' },
+  { nome: 'Snowdonia', lat: 52.90, lon: -3.90, key: 'c826' },
+  { nome: 'Cairngorms', lat: 57.10, lon: -3.67, key: 'c826' },
+  { nome: 'Neusiedler See', lat: 47.85, lon: 16.85, key: 'c040' },
+  /* ---------- Africa ---------- */
+  { nome: 'Kruger', lat: -23.99, lon: 31.55, key: 'c710' },
+  { nome: 'Table Mountain', lat: -33.96, lon: 18.40, key: 'c710' },
+  { nome: 'Addo Elephant', lat: -33.45, lon: 25.75, key: 'c710' },
+  { nome: 'Serengeti', lat: -2.37, lon: 34.90, key: 'c834' },
+  { nome: 'Kilimanjaro', lat: -3.07, lon: 37.36, key: 'c834' },
+  { nome: 'Ngorongoro', lat: -3.20, lon: 35.47, key: 'c834' },
+  { nome: 'Masai Mara', lat: -1.45, lon: 35.03, key: 'c404' },
+  { nome: 'Amboseli', lat: -2.65, lon: 37.25, key: 'c404' },
+  { nome: 'Bwindi Impenetrable', lat: -1.05, lon: 29.77, key: 'c800' },
+  { nome: 'Etosha', lat: -18.95, lon: 16.90, key: 'c516' },
+  { nome: 'Namib-Naukluft', lat: -24.55, lon: 15.90, key: 'c516' },
+  { nome: 'Chobe', lat: -17.85, lon: 25.10, key: 'c072' },
+  { nome: 'Victoria Falls', lat: -17.92, lon: 25.85, key: 'c716' },
+  { nome: 'Hwange', lat: -18.73, lon: 26.95, key: 'c716' },
+  { nome: 'South Luangwa', lat: -13.15, lon: 31.55, key: 'c894' },
+  { nome: 'Tsavo East', lat: -2.78, lon: 38.75, key: 'c404' },
+  { nome: 'Ras Mohammed', lat: 27.72, lon: 34.25, key: 'c818' },
+  { nome: 'Simien Mountains', lat: 13.20, lon: 38.10, key: 'c231' },
+  { nome: 'Toubkal', lat: 31.06, lon: -7.92, key: 'c504' },
+  { nome: 'Niokolo-Koba', lat: 13.07, lon: -12.75, key: 'c686' },
+  /* ---------- Asia ---------- */
+  { nome: 'Zhangjiajie', lat: 29.34, lon: 110.45, key: 'c156' },
+  { nome: 'Jiuzhai Valley', lat: 33.20, lon: 103.90, key: 'c156' },
+  { nome: 'Huangshan', lat: 30.13, lon: 118.17, key: 'c156' },
+  { nome: 'Fuji-Hakone-Izu', lat: 35.36, lon: 138.73, key: 'c392' },
+  { nome: 'Daisetsuzan', lat: 43.65, lon: 142.90, key: 'c392' },
+  { nome: 'Shiretoko', lat: 44.10, lon: 145.15, key: 'c392' },
+  { nome: 'Yakushima', lat: 30.33, lon: 130.51, key: 'c392' },
+  { nome: 'Jim Corbett', lat: 29.53, lon: 78.77, key: 'c356' },
+  { nome: 'Kaziranga', lat: 26.58, lon: 93.40, key: 'c356' },
+  { nome: 'Sundarbans', lat: 21.85, lon: 88.90, key: 'c356' },
+  { nome: 'Kanha', lat: 22.20, lon: 80.70, key: 'c356' },
+  { nome: 'Valley of Flowers', lat: 30.79, lon: 79.62, key: 'c356' },
+  { nome: 'Chitwan', lat: 27.45, lon: 84.40, key: 'c524' },
+  { nome: 'Sagarmatha', lat: 27.95, lon: 86.88, key: 'c524' },
+  { nome: 'Khao Yai', lat: 14.43, lon: 101.37, key: 'c764' },
+  { nome: 'Doi Inthanon', lat: 18.59, lon: 98.49, key: 'c764' },
+  { nome: 'Komodo', lat: -8.57, lon: 119.62, key: 'c360' },
+  { nome: 'Bromo Tengger Semeru', lat: -8.02, lon: 112.89, key: 'c360' },
+  { nome: 'Ujung Kulon', lat: -6.75, lon: 105.33, key: 'c360' },
+  { nome: 'Kinabalu', lat: 6.06, lon: 116.56, key: 'c458' },
+  { nome: 'Taman Negara', lat: 4.70, lon: 102.40, key: 'c458' },
+  { nome: 'Phong Nha', lat: 17.54, lon: 106.15, key: 'c704' },
+  { nome: 'Puerto Princesa', lat: 10.17, lon: 118.92, key: 'c608' },
+  { nome: 'Yala', lat: 6.55, lon: 81.30, key: 'c144' },
+  { nome: 'Sinharaja', lat: 6.40, lon: 80.40, key: 'c144' },
+  { nome: 'Ulaan Taiga', lat: 51.00, lon: 92.00, key: 'c496' },
+  { nome: 'Gorkhi-Terelj', lat: 47.95, lon: 107.45, key: 'c496' },
+  /* ---------- Oceania ---------- */
+  { nome: 'Uluru-Kata Tjuta', lat: -25.34, lon: 131.03, key: 'c036' },
+  { nome: 'Kakadu', lat: -12.85, lon: 132.60, key: 'c036' },
+  { nome: 'Daintree', lat: -16.17, lon: 145.30, key: 'c036' },
+  { nome: 'Blue Mountains', lat: -33.60, lon: 150.40, key: 'c036' },
+  { nome: 'Grampians', lat: -37.10, lon: 142.40, key: 'c036' },
+  { nome: 'Wilsons Promontory', lat: -39.00, lon: 146.35, key: 'c036' },
+  { nome: 'Great Barrier Reef', lat: -18.20, lon: 147.70, key: 'c036' },
+  { nome: 'Fiordland', lat: -45.40, lon: 167.35, key: 'c554' },
+  { nome: 'Tongariro', lat: -39.16, lon: 175.65, key: 'c554' },
+  { nome: 'Abel Tasman', lat: -41.00, lon: 173.00, key: 'c554' },
+  { nome: 'Aoraki / Mount Cook', lat: -43.70, lon: 170.14, key: 'c554' },
+  { nome: 'Papahānaumokuākea', lat: 25.20, lon: -170.00, key: 'c840' }
 ];
-PARCHI_USA.forEach((p, i) => { p.id = 'parco:' + (i + 1); p.key = 'c840'; p.pop = 0; });
-const PARCHI_BY_ID = new Map(PARCHI_USA.map(p => [p.id, p]));
+PARCHI_MONDO.forEach((p, i) => { p.id = 'parco:' + (i + 1); p.pop = 0; });
+const PARCHI_BY_ID = new Map(PARCHI_MONDO.map(p => [p.id, p]));
+const PARCHI_PER_NAZIONE = new Map();
+for (const p of PARCHI_MONDO) {
+  if (!PARCHI_PER_NAZIONE.has(p.key)) PARCHI_PER_NAZIONE.set(p.key, []);
+  PARCHI_PER_NAZIONE.get(p.key).push(p);
+}
 
 let indiceAlias = new Map(); // alias normalizzato/codice -> meta nazione
 let indiceCcn3 = new Map();  // codice numerico ISO (ccn3) -> meta nazione
@@ -166,7 +302,7 @@ function salva() {
   localStorage.setItem(LS_CITTA, JSON.stringify([...stato.visitateCitta]));
   try { localStorage.setItem(LS_ORDINE, JSON.stringify(stato.visiteOrdine)); } catch (e) {}
   try { localStorage.setItem(LS_DATA, JSON.stringify(stato.visiteData)); } catch (e) {}
-  try { localStorage.setItem(LS_PERCORSO, JSON.stringify(stato.percorsoTappe)); } catch (e) {}
+  try { localStorage.setItem(LS_VIAGGI, JSON.stringify({ viaggi: stato.viaggi, attivo: stato.viaggioAttivo })); } catch (e) {}
 }
 
 function salvaCache() {
@@ -189,8 +325,24 @@ function carica() {
     }
     stato.visiteOrdine = JSON.parse(localStorage.getItem(LS_ORDINE) || '[]');
     stato.visiteData = JSON.parse(localStorage.getItem(LS_DATA) || '{}');
-    stato.percorsoTappe = JSON.parse(localStorage.getItem(LS_PERCORSO) || '[]');
-    if (!Array.isArray(stato.percorsoTappe)) stato.percorsoTappe = [];
+    /* vista Percorsi: carichiamo i viaggi salvati (più di uno, ognuno con
+       nome e tappe). Se mancano, restano vuoti (si costruiscono da zero). */
+    const vj = JSON.parse(localStorage.getItem(LS_VIAGGI) || 'null');
+    if (vj && Array.isArray(vj.viaggi)) {
+      stato.viaggi = vj.viaggi.filter(v => v && typeof v === 'object' && Array.isArray(v.tappe));
+      stato.viaggioAttivo = (vj.attivo && stato.viaggi.some(v => v.nome === vj.attivo)) ? vj.attivo : null;
+    } else {
+      /* compatibilità: l'utente prima aveva un solo percorso (LS_PERCORSO):
+         lo convertiamo in un viaggio col nome di default */
+      const vecchio = JSON.parse(localStorage.getItem(LS_PERCORSO) || '[]');
+      if (Array.isArray(vecchio) && vecchio.length) {
+        stato.viaggi = [{ nome: 'Il mio viaggio', tappe: vecchio }];
+        stato.viaggioAttivo = 'Il mio viaggio';
+      } else {
+        stato.viaggi = [];
+        stato.viaggioAttivo = null;
+      }
+    }
     /* per gli utenti che hanno già visitato città prima dell'introduzione del
        percorso: ricostruiamo l'ordine dal Set delle città visitate (senza data),
        così il percorso funziona anche per le visite passate. */
@@ -316,10 +468,76 @@ function eCasa(id) {
   return !!(stato.casaCitta && stato.casaCitta.id === id);
 }
 
-/* la città è una tappa del percorso attivo (vista Percorsi)? */
+/* il viaggio attualmente aperto (quello che stai costruendo/guardando) */
+function viaggioAttivoObj() {
+  if (!stato.viaggioAttivo) return null;
+  return stato.viaggi.find(v => v && v.nome === stato.viaggioAttivo) || null;
+}
+
+/* le tappe del viaggio attivo (come array): chiunque ne ha bisogno usa questo */
+function tappeAttive() {
+  const v = viaggioAttivoObj();
+  return v ? v.tappe : [];
+}
+
+function nuovoViaggio(nome) {
+  nome = String(nome || '').trim();
+  let base = nome;
+  if (!base) {
+    let n = stato.viaggi.length + 1;
+    while (stato.viaggi.some(v => v.nome === 'Viaggio ' + n)) n++;
+    base = 'Viaggio ' + n;
+  }
+  if (stato.viaggi.some(v => v.nome === base)) {
+    toast('Esiste già un viaggio con questo nome', 3000);
+    return null;
+  }
+  const v = { nome: base, tappe: [] };
+  stato.viaggi.push(v);
+  stato.viaggioAttivo = base;
+  salva();
+  renderViaggi();
+  return v;
+}
+
+function rinominaViaggio(vecchio, nuovo) {
+  nuovo = String(nuovo || '').trim();
+  if (!nuovo || stato.viaggi.some(v => v.nome === nuovo)) { toast('Nome non valido o già in uso', 3000); return; }
+  const v = stato.viaggi.find(x => x.nome === vecchio);
+  if (!v) return;
+  v.nome = nuovo;
+  if (stato.viaggioAttivo === vecchio) stato.viaggioAttivo = nuovo;
+  salva();
+  renderViaggi();
+}
+
+function eliminaViaggio(nome) {
+  const v = stato.viaggi.find(x => x.nome === nome);
+  if (!v) return;
+  if (!confirm('Eliminare il viaggio "' + nome + '" (' + v.tappe.length + ' tappe)?')) return;
+  stato.viaggi = stato.viaggi.filter(x => x.nome !== nome);
+  if (stato.viaggioAttivo === nome) {
+    stato.viaggioAttivo = stato.viaggi[0] ? stato.viaggi[0].nome : null;
+  }
+  salva();
+  aggiornaPunti();
+  renderViaggi();
+  if (globo2d) globo2d.aggiorna();
+}
+
+/* ricostruisce il pannello dei viaggi (chiamata dopo ogni modifica) */
+function renderViaggi() {
+  renderPannello();
+  renderListaCitta();
+  aggiornaContatoreCitta();
+  aggiornaPunti();
+  if (globo2d) globo2d.aggiorna();
+}
+
+/* la città è una tappa del viaggio attivo (vista Percorsi)? */
 function eTappaPercorso(id) {
   if (stato.modalita !== 'percorsi') return false;
-  for (const t of stato.percorsoTappe) if (t && t.id === id) return true;
+  for (const t of tappeAttive()) if (t && t.id === id) return true;
   return false;
 }
 
@@ -363,12 +581,12 @@ function etichettaCitta(c) {
   const pref = eCasa(c.id) ? '🏠 ' : (eParco(c.id) ? '' : '');
   const col = eCasa(c.id) ? '#c084fc' : (vis ? (stato.modalita === 'percorsi' ? '#fdba74' : '#ff2d2d') : '#93a4c8');
   const statoTesto = stato.modalita === 'percorsi'
-    ? (vis ? '✓ Tappa del percorso' : 'Tocca per aggiungere al percorso')
+    ? (vis ? '✓ Tappa del viaggio' : 'Tocca per aggiungere al viaggio')
     : (vis ? '✓ Visitato' : 'Tocca per segnare');
   return `<div style="background:rgba(11,17,34,.92);padding:6px 10px;border-radius:8px;border:1px solid rgba(120,160,255,.35)">
         <b>${pref}${eParco(c.id) ? '🏞️ ' : ''}${esc(c.nome)}</b>${c.pop ? ` · ${formattaPop(c.pop)}` : ''}<br>
         <span style="font-size:11px;color:${col}">
-          ${eCasa(c.id) ? 'La tua città' : eParco(c.id) ? 'Parco nazionale USA' : statoTesto}</span></div>`;
+          ${eCasa(c.id) ? 'La tua città' : eParco(c.id) ? 'Parco nazionale' : statoTesto}</span></div>`;
 }
 
 function initGlobo(feats) {
@@ -597,7 +815,7 @@ function initGlobo(feats) {
        e solo da vicino (regione per regione) */
     if (stato.modalita !== 'percorsi') return;
     if (vista.alt > SOGLIA_PERCORSO) return;
-    const tappe = stato.percorsoTappe || [];
+    const tappe = tappeAttive();
     if (tappe.length < 2) return;
     /* linea di percorso da tappa a tappa (nell'ordine in cui le segni),
        visibile e marcata, con frecce di direzione a metà di ogni segmento */
@@ -765,8 +983,12 @@ function initGlobo(feats) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (distanzaDita > 0 && d > 0) {
         const f = d / distanzaDita;
-        /* zoom: esponente 1.6 = più reattivo al movimento delle dita */
-        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altStartZoom / Math.pow(f, 1.6)));
+        /* zoom ADATTIVO: l'esponente cresce man mano che ci si avvicina (alt
+           piccola), così a terra si vede subito l'effetto di ogni movimentino
+           delle dita. Da lontano resta "governabile". */
+        const altZ = altStartZoom;
+        const esponente = altZ < 0.05 ? 3.4 : altZ < 0.3 ? 2.5 : 1.7;
+        vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, altZ / Math.pow(f, esponente)));
       }
     }
   }
@@ -858,7 +1080,10 @@ function initGlobo(feats) {
     /* zoom "governabile": ogni notch della rotella fa un passo moderato e il
        delta viene capato, così i mouse velocissimi non saltano tutto */
     const passo = Math.max(-120, Math.min(120, (delta || 0)));
-    const f = Math.pow(0.9985, passo);
+    /* zoom adattivo anche col mouse: da vicino ogni giro della rotella
+       muove di più, così non serve srotolare all'infinito per avvicinarsi */
+    const fatt = vista.alt < 0.05 ? 1.8 : (vista.alt < 0.3 ? 1.35 : 1);
+    const f = Math.pow(0.9985, passo * fatt);
     vista.alt = Math.max(MIN_ALT, Math.min(MAX_ALT, vista.alt * f));
     daRidisegnare = true;
   }, { passive: false });
@@ -1008,6 +1233,10 @@ function liveAltitudine() {
    "zoom molto vicino": le città della vista globale appaiono solo quando
    ti avvicini abbastanza, così niente caos da lontano. L'utente regola. */
 const GATE_CITTA = 0.6;
+
+/* i parchi nazionali compaiono SOLO avvicinandosi (non sempre): sotto questa
+   altitudine si "svelano" i parchi più famosi del mondo (come le città). */
+const GATE_PARCHI = 0.55;
 
 /* le città visitate + la casa compaiono SOLO molto vicini (zoom profondo):
    sotto questa altitudine (0.10). Prima non si vedono. L'utente l'ha scelto. */
@@ -1234,10 +1463,9 @@ function puntiVisibili() {
   const mappa = new Map();
   const push = (c) => { if (c && !mappa.has(c.id)) mappa.set(c.id, Object.assign({}, c)); };
   const alt = liveAltitudine();
-  /* i PARCHI nazionali USA sono SEMPRE nel pool (solo ~50 punti): visibili e
-     cliccabili da qualsiasi zoom, sia col dito sia col mouse, sia in mappa
-     (info) sia in percorsi (tappa). */
-  PARCHI_USA.forEach(p => push(p));
+  /* i PARCHI NAZIONALI compaiono SOLO avvicinandosi (sotto GATE_PARCHI),
+     come le città: non inondano il globo da lontano. */
+  const parchiVisibili = alt != null && alt < GATE_PARCHI;
   /* se una nazione e selezionata mostriamo TUTTE le sue citta (toccabili subito).
      Nessuna soglia di popolazione: appaiono tutti i pallini della nazione,
      così anche le più piccole sono visibili e toccabili. */
@@ -1246,25 +1474,29 @@ function puntiVisibili() {
       .sort((a, b) => (b.cap ? 1 : 0) - (a.cap ? 1 : 0) || (b.pop || 0) - (a.pop || 0))
       .slice(0, 4000);
     lista.forEach(c => push(c));
-    if (stato.selezionata === 'c840') {
-      PARCHI_USA.forEach(p => push(p));
+    if (parchiVisibili) {
+      (PARCHI_PER_NAZIONE.get(stato.selezionata) || []).forEach(p => push(p));
+    }
+    if (stato.modalita === 'percorsi') {
+      for (const t of tappeAttive()) {
+        push(stato.cittaById.get(t.id) || stato.cacheCitta[t.id] ||
+             { id: t.id, nome: t.nome, lat: t.lat, lon: t.lon, pop: 0, key: t.key });
+      }
     }
     return Array.from(mappa.values());
   }
 
-  /* Nella vista Percorsi le TAPPE del percorso attivo compaiono SEMPRE
-     (è il contenuto della vista): le aggiungiamo al visible pool senza
-     soglia di zoom, così le tocchi e le rivedi subito. */
+  /* Nella vista Percorsi le TAPPE del viaggio attivo compaiono SEMPRE
+     (è il contenuto della vista: SOLO questo viaggio, non tutti). */
   if (stato.modalita === 'percorsi') {
-    for (const t of stato.percorsoTappe) {
+    for (const t of tappeAttive()) {
       push(stato.cittaById.get(t.id) || stato.cacheCitta[t.id] ||
            { id: t.id, nome: t.nome, lat: t.lat, lon: t.lon, pop: 0, key: t.key });
     }
     if (stato.casaCitta) {
       push({ id: stato.casaCitta.id, nome: stato.casaCitta.nome, lat: stato.casaCitta.lat, lon: stato.casaCitta.lon, pop: 0, casa: true });
     }
-    /* tutti i parchi del Nordamerica, da qualsiasi zoom: servono a pianificare */
-    PARCHI_USA.forEach(p => push(p));
+    if (parchiVisibili) PARCHI_MONDO.forEach(p => push(p));
   }
 
   /* citta visitate + casa (solo vista Mappa): NON sempre visibili (l'utente
@@ -1285,6 +1517,11 @@ function puntiVisibili() {
      e via via emergono sempre più città (soglia di popolazione CONTINUA, che
      scende con lo zoom in modo graduale). Ogni pallino avrà il suo nome. */
   if (alt != null && alt >= GATE_CITTA) return Array.from(mappa.values());
+
+  /* i parchi si "svelano" un po' prima delle città (GATE_PARCHI < GATE_CITTA):
+     avvicinandoti compaiono i parchi (pochi, ben distanziati), ancora prima
+     che si dispieghino le centinaia di città. */
+  if (parchiVisibili) PARCHI_MONDO.forEach(p => push(p));
 
   const soglia = sogliaPopDaAlt(alt);     // continua, scende con lo zoom
   /* cap totale, graduale: a zoom massimo pochi pallini centrali (nomi
@@ -1329,7 +1566,7 @@ function etichetteVisibili() {
   let viste;
   if (stato.modalita === 'percorsi') {
     viste = new Set();
-    for (const t of stato.percorsoTappe) if (t && t.id) viste.add(t.id);
+    for (const t of tappeAttive()) if (t && t.id) viste.add(t.id);
   } else {
     viste = new Set(stato.visitateCitta);
   }
@@ -1359,24 +1596,33 @@ function aggiornaPunti() {
   aggiornaHUD();
 }
 
-/* vista Percorsi: aggiunge/rimuove una tappa dal percorso attivo.
-   Le tappe vivono in stato.percorsoTappe (dataset separato dalla mappa),
-   così le due viste hanno vite indipendenti. */
+/* vista Percorsi: aggiunge/rimuove una tappa dal viaggio ATTIVO.
+   Le tappe vivono dentro ogni viaggio di stato.viaggi (dataset separato
+   dalla mappa), così le due viste hanno vite indipendenti. */
 function toggleTappa(c) {
-  const esistente = stato.percorsoTappe.some(t => t && t.id === c.id);
+  const attivo = viaggioAttivoObj();
+  /* senza un viaggio aperto, il tocco su una città/parco lo crea al volo
+     (col nome che scegli) così la costruzione non si ferma mai */
+  if (!attivo) {
+    const nome = prompt('Nome del nuovo viaggio:', 'Viaggio ' + (stato.viaggi.length + 1));
+    if (!nome) return;
+    const v = nuovoViaggio(nome);
+    if (!v) return;
+  }
+  const tappe = tappeAttive();
+  const esistente = tappe.some(t => t && t.id === c.id);
   if (esistente) {
-    stato.percorsoTappe = stato.percorsoTappe.filter(t => t.id !== c.id);
-    toast(`Percorso: rimosso "${c.nome}"`);
+    const nuovo = tappe.filter(t => t.id !== c.id);
+    viaggioAttivoObj().tappe = nuovo;
+    toast(`Viaggio "${viaggioAttivoObj().nome}": rimosso "${c.nome}"`);
   } else {
-    const tappa = {
-      id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key
-    };
-    stato.percorsoTappe.push(tappa);
-    toast(`Percorso: + "${c.nome}" (tappa ${stato.percorsoTappe.length})`);
+    tappe.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key });
+    toast(`Viaggio "${viaggioAttivoObj().nome}": + "${c.nome}" (tappa ${tappe.length})`);
   }
   salva();
   aggiornaPunti();
   renderListaCitta();
+  aggiornaContatoreCitta();
   if (globo2d) globo2d.aggiorna();
 }
 
@@ -1421,15 +1667,16 @@ function renderPannello() {
   const p = document.getElementById('pannello');
   if (!stato.selezionata) {
     /* In vista Percorsi il pannello si apre anche SENZA una nazione
-       selezionata: mostra "Il tuo percorso" (tappe da riordinare/togliere). */
+       selezionata: mostra i VIAGGI salvati. */
     if (stato.modalita === 'percorsi') {
       p.classList.add('aperta');
+      const attivo = viaggioAttivoObj();
       p.innerHTML = `
         <div class="p-head">
-          <h2>🗺️ Il tuo percorso</h2>
+          <h2>🗺️ I tuoi viaggi</h2>
           <button class="btn" id="p-chiudi">✕</button>
         </div>
-        <div class="p-sub"><span>${stato.percorsoTappe.length ? 'Tocca una tappa per toglierla · frecce per riordinare' : 'Tocca le città e i parchi sul globo per costruirlo'}</span><b id="p-count">${stato.percorsoTappe.length}</b></div>
+        <div class="p-sub"><span>${stato.viaggi.length ? 'Tocca un viaggio per vederlo · frecce per riordinare le tappe' : 'Creane uno: tocca le città e i parchi sul globo per costruirlo'}</span><b id="p-count">${stato.viaggi.length}</b></div>
         <div class="p-lista" id="p-lista"></div>`;
       document.getElementById('p-chiudi').addEventListener('click', () => {
         document.getElementById('pannello').classList.remove('aperta');
@@ -1458,7 +1705,7 @@ function renderPannello() {
     </div>
     ${inPercorsi ? '' : `<button class="btn-visita ${visitata ? 'attiva' : ''}" id="p-toggle"></button>`}
     <input class="p-ricerca" id="p-ricerca" placeholder="Cerca città…" autocomplete="off" value="${esc(stato.query)}">
-    <div class="p-sub"><span>${inPercorsi ? 'Tappe del percorso — tocca le città per aggiungerle' : 'Città visitate'}</span><b id="p-count">—</b></div>
+    <div class="p-sub"><span>${inPercorsi ? 'Tappe del viaggio attivo — tocca le città per aggiungerle' : 'Città visitate'}</span><b id="p-count">—</b></div>
     <div class="p-lista" id="p-lista"></div>`;
 
   document.getElementById('p-chiudi').addEventListener('click', deseleziona);
@@ -1498,14 +1745,16 @@ function listaFiltrata() {
   });
   const q = norma(stato.query);
   let filtrata = q ? uniche.filter(c => norma(c.nome).includes(q)) : uniche.slice();
-  /* quando selezioni gli USA (c840), nella lista ci sono anche i parchi
-     nazionali: selezionabili (in percorsi) e tappabili dalla riga */
-  if (stato.selezionata === 'c840') {
+  /* nella lista della nazione selezionata ci sono anche i suoi parchi
+     nazionali (solo di quella nazione, non tutti del mondo): selezionabili
+     (in percorsi) e tappabili dalla riga. */
+  const parchiNazione = PARCHI_PER_NAZIONE.get(stato.selezionata) || [];
+  if (parchiNazione.length) {
     if (q) {
-      const parchiFiltrati = PARCHI_USA.filter(p => norma(p.nome).includes(q));
+      const parchiFiltrati = parchiNazione.filter(p => norma(p.nome).includes(q));
       if (parchiFiltrati.length) filtrata = filtrata.concat(parchiFiltrati);
     } else {
-      filtrata.push(...PARCHI_USA);
+      filtrata = filtrata.concat(parchiNazione);
     }
   }
   return { filtrata, totale: uniche.length };
@@ -1544,9 +1793,18 @@ function aggiungiCittaManuale(nome, lat, lon, ottieniNomeNazione) {
   stato.visiteOrdine.push(id);
   stato.visiteData[id] = oggi();
   stato.cacheCitta[id] = { id, nome: c.nome, lat: c.lat, lon: c.lon, pop: 0 };
-  /* in modalità Percorsi la città aggiunta diventa anche una TAPPA del percorso */
-  if (stato.modalita === 'percorsi' && !stato.percorsoTappe.some(t => t.id === id)) {
-    stato.percorsoTappe.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key });
+  /* in modalità Percorsi la città aggiunta diventa anche una TAPPA del
+     viaggio attivo (se non ce n'è uno, se ne crea uno al volo) */
+  if (stato.modalita === 'percorsi') {
+    let v = viaggioAttivoObj();
+    if (!v) {
+      let n = stato.viaggi.length + 1;
+      while (stato.viaggi.some(x => x.nome === 'Viaggio ' + n)) n++;
+      v = { nome: 'Viaggio ' + n, tappe: [] };
+      stato.viaggi.push(v);
+      stato.viaggioAttivo = v.nome;
+    }
+    if (!v.tappe.some(x => x.id === id)) v.tappe.push({ id: c.id, nome: c.nome, lat: c.lat, lon: c.lon, key: c.key });
   }
   salva();
   salvaCache();
@@ -1617,36 +1875,67 @@ function renderListaCitta() {
 
   let html = '';
 
-  /* Blocco "Il tuo percorso": in cima alla lista, VISIBILE anche senza una
-     nazione selezionata. Ogni tappa in ordine con frecce per riordinarla e
-     tap sulla riga per toglierla dal percorso. */
-  if (inPercorsi && stato.percorsoTappe.length) {
-    const pp = stato.percorsoTappe;
-    html += `<div class="sez-percorso">Il tuo percorso (${pp.length} tappe)</div>`;
-    html += '<div class="int-tappe">';
-    pp.forEach((t, i) => {
-      const capo = eParco(t.id) ? '🏞️ ' : '';
-      html += `<div class="riga-citta tappa nel-percorso" data-id="${t.id}">
-        <span class="t-num">${i + 1}</span>
-        <span class="info"><span class="nome">${capo}${esc(t.nome)}</span></span>
-        <span class="frecce">
-          <button class="f-up" data-msg="${t.id}" ${i === 0 ? 'disabled' : ''}>⇡</button>
-          <button class="f-down" data-msg="${t.id}" ${i === pp.length - 1 ? 'disabled' : ''}>⇣</button>
-        </span>
-        <span class="t-rem">✕</span>
-      </div>`;
-    });
-    html += '</div>';
-    html += '<div class="vuoto" style="margin:2px 0 6px">Tocca una tappa per toglierla · usa le frecce per riordinare</div>';
+  /* In vista Percorsi, SENZA una nazione selezionata, qui c'è la lista dei
+     VIAGGI salvati: se ne mostra uno alla volta (l'attivo), si clicca il nome
+     per aprirlo sul globo. */
+  if (inPercorsi && !stato.selezionata) {
+    if (stato.viaggi.length) {
+      html += '<div class="sez-percorso">I tuoi viaggi</div>';
+      html += '<div class="int-viaggi">';
+      stato.viaggi.forEach(v => {
+        const attivo = v.nome === stato.viaggioAttivo;
+        html += `<div class="riga-citta viag ${attivo ? 'nel-percorso' : ''}" data-nome="${esc(v.nome)}">
+          <span class="info"><span class="nome">${attivo ? '🗺️ ' : ''}${esc(v.nome)}</span>
+            <span class="pop">${v.tappe.length} tappa${v.tappe.length === 1 ? '' : 'e'}</span></span>
+          <span class="frecce">
+            <button class="v-ren" data-nome="${esc(v.nome)}">✏️</button>
+            <button class="v-rem" data-nome="${esc(v.nome)}">✕</button>
+          </span>
+        </div>`;
+      });
+      html += '</div>';
+      html += '<div class="vuoto" style="margin:2px 0 6px">Tocca un viaggio per vederlo sul globo · ✏️ per rinominarlo, ✕ per eliminarlo</div>';
+    } else {
+      html += '<div class="vuoto">Non hai ancora viaggi. Tocca le città e i parchi sul globo per creare il primo</div>';
+    }
+    html += `<div class="riga-citta v-add" style="border:1px dashed rgba(120,160,255,.4);margin-top:6px">
+      <span style="color:#38bdf8;font-size:15px">➕</span>
+      <span class="info"><span class="nome" style="color:#38bdf8">Nuovo viaggio</span></span>
+    </div>`;
   }
 
-  /* In modalità Percorsi la lista segue l'ORDINE del percorso (le tappe della
-     nazione prima, in ordine di viaggio, poi le altre): così spostare una
-     tappa con le frecce riordina subito anche l'elenco. */
+  /* In vista Percorsi, CON una nazione selezionata: in cima le tappe del
+     VIAGGIO ATTIVO (in ordine, con frecce per riordinarle e ✕ per toglierle).
+     Le tappe non si vedono se sono di un altro viaggio: si vede solo l'attivo. */
+  if (inPercorsi && stato.selezionata) {
+    const pp = tappeAttive();
+    if (pp.length) {
+      html += `<div class="sez-percorso">Il viaggio "${esc(stato.viaggioAttivo)}" (${pp.length} tappe)</div>`;
+      html += '<div class="int-tappe">';
+      pp.forEach((t, i) => {
+        const capo = eParco(t.id) ? '🏞️ ' : '';
+        html += `<div class="riga-citta tappa nel-percorso" data-id="${t.id}">
+          <span class="t-num">${i + 1}</span>
+          <span class="info"><span class="nome">${capo}${esc(t.nome)}</span></span>
+          <span class="frecce">
+            <button class="f-up" data-msg="${t.id}" ${i === 0 ? 'disabled' : ''}>⇡</button>
+            <button class="f-down" data-msg="${t.id}" ${i === pp.length - 1 ? 'disabled' : ''}>⇣</button>
+          </span>
+          <span class="t-rem">✕</span>
+        </div>`;
+      });
+      html += '</div>';
+      html += '<div class="vuoto" style="margin:2px 0 6px">Tocca una tappa per toglierla · usa le frecce per riordinare</div>';
+    }
+  }
+
+  /* In modalità Percorsi la lista segue l'ORDINE del viaggio attivo (le sue
+     tappe prima, in ordine, poi le altre città): così spostare una tappa con
+     le frecce riordina subito anche l'elenco. */
   const posTappa = new Map();
   if (inPercorsi) {
-    stato.percorsoTappe.forEach((t, i) => posTappa.set(t.id, i));
-    filtrata.sort((a, b) => {
+    tappeAttive().forEach((t, i) => posTappa.set(t.id, i));
+    if (filtrata.length) filtrata.sort((a, b) => {
       const ta = posTappa.has(a.id), tb = posTappa.has(b.id);
       if (ta !== tb) return ta ? -1 : 1;
       if (ta) return posTappa.get(a.id) - posTappa.get(b.id);
@@ -1686,23 +1975,59 @@ function renderListaCitta() {
       <span style="color:#38bdf8;font-size:15px">➕</span>
       <span class="info"><span class="nome" style="color:#38bdf8">${esc(q || 'Aggiungi una città non in elenco')}</span></span>
     </div>`;
-  } else if (inPercorsi && !stato.percorsoTappe.length) {
-    html += `<div class="vuoto">Tocca le città e i parchi sul globo per costruire il tuo percorso</div>`;
   }
 
   el.innerHTML = html;
+
+  /* righe dei viaggi (solo in Percorsi senza nazione) */
+  el.querySelectorAll('.viag').forEach(r =>
+    r.addEventListener('click', () => {
+      const nome = r.dataset.nome;
+      if (!nome || nome === stato.viaggioAttivo) return;
+      stato.viaggioAttivo = nome;
+      salva();
+      aggiornaPunti();
+      renderListaCitta();
+      aggiornaContatoreCitta();
+      if (globo2d) globo2d.aggiorna();
+      /* porta il globo sul viaggio appena aperto (prima tappa) */
+      const t = tappeAttive().find(x => x && x.lat != null && x.lon != null);
+      if (t && globo2d) globo2d.pointOfView({ lat: t.lat, lng: t.lon, altitude: 0.5 }, 900);
+    }));
+
+  el.querySelectorAll('.v-add').forEach(b =>
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const nome = prompt('Nome del nuovo viaggio:', 'Viaggio ' + (stato.viaggi.length + 1));
+      if (!nome) return;
+      nuovoViaggio(nome);
+    }));
+
+  el.querySelectorAll('.v-ren').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const vecchio = b.dataset.nome;
+    const nome = prompt('Nuovo nome del viaggio:', vecchio);
+    if (!nome || nome === vecchio) return;
+    rinominaViaggio(vecchio, nome);
+  }));
+
+  el.querySelectorAll('.v-rem').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    eliminaViaggio(b.dataset.nome);
+  }));
+
   el.querySelectorAll('.riga-citta[data-id]').forEach(r =>
     r.addEventListener('click', () => {
       if (inPercorsi) {
         if (r.classList.contains('nel-percorso')) {
-          /* riga del blocco "Il tuo percorso": toglie la tappa */
-          const t = stato.percorsoTappe.find(x => x.id === r.dataset.id);
+          /* riga del blocco del viaggio attivo: toglie la tappa */
+          const t = tappeAttive().find(x => x.id === r.dataset.id);
           if (t) toggleTappa(t);
           return;
         }
         const c = stato.cittaById.get(r.dataset.id) || stato.cacheCitta[r.dataset.id] || PARCHI_BY_ID.get(r.dataset.id);
         if (c) {
-          const prima = !stato.percorsoTappe.some(t => t.id === c.id);
+          const prima = !tappeAttive().some(t => t.id === c.id);
           toggleTappa(c);
           if (prima && globo2d && c.lat != null && c.lon != null) {
             globo2d.pointOfView({ lat: c.lat, lng: c.lon, altitude: vistaAttualeAlt() }, 200);
@@ -1727,7 +2052,7 @@ function renderListaCitta() {
 
   el.querySelectorAll('.t-rem').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
-    const t = stato.percorsoTappe.find(x => x.id === b.parentElement.dataset.id);
+    const t = tappeAttive().find(x => x.id === b.parentElement.dataset.id);
     if (t) toggleTappa(t);
   }));
 
@@ -1739,15 +2064,18 @@ function renderListaCitta() {
   });
 }
 
-/* sposta una tappa del percorso (id) di una posizione (su = -1, giù = +1),
-   con aggiornamento immediato del disegno e della lista. */
+/* sposta una tappa del viaggio attivo (id) di una posizione (su = -1,
+   giù = +1), con aggiornamento immediato del disegno e della lista. */
 function spostaTappa(id, dir) {
-  const i = stato.percorsoTappe.findIndex(t => t.id === id);
+  const v = viaggioAttivoObj();
+  if (!v) return;
+  const t = v.tappe;
+  const i = t.findIndex(x => x.id === id);
   if (i < 0) return;
   const j = i + dir;
-  if (j < 0 || j >= stato.percorsoTappe.length) return;
-  const [mossa] = stato.percorsoTappe.splice(i, 1);
-  stato.percorsoTappe.splice(j, 0, mossa);
+  if (j < 0 || j >= t.length) return;
+  const [mossa] = t.splice(i, 1);
+  t.splice(j, 0, mossa);
   salva();
   if (globo2d) globo2d.aggiorna();
   renderListaCitta();
@@ -1762,7 +2090,8 @@ function aggiornaContatoreCitta() {
   const el = document.getElementById('p-count');
   if (!el) return;
   if (stato.modalita === 'percorsi') {
-    el.textContent = stato.pronte ? `${stato.percorsoTappe.length} ${stato.percorsoTappe.length === 1 ? 'tappa' : 'tappe'}` : '…';
+    const n = tappeAttive().length;
+    el.textContent = stato.pronte ? `${n} ${n === 1 ? 'tappa' : 'tappe'}` : '…';
     return;
   }
   if (!stato.selezionata) return;
@@ -1942,7 +2271,8 @@ function costruisciBackup() {
     citta: [...stato.visitateCitta],
     ordine: stato.visiteOrdine,
     date: stato.visiteData,
-    percorso: stato.percorsoTappe,
+    viaggi: stato.viaggi,
+    viaggioAttivo: stato.viaggioAttivo,
     cacheCitta: stato.cacheCitta,
     casa: { nazione: stato.casaNazione, citta: stato.casaCitta }
   };
@@ -2002,8 +2332,19 @@ function importa(file) {
         stato.visiteOrdine = [...stato.visitateCitta];
         stato.visiteData = {};
       }
-      /* vista Percorsi: tappe del viaggio costruito dall'utente */
-      stato.percorsoTappe = Array.isArray(d.percorso) ? d.percorso : [];
+      /* viaggi: se nel backup ci sono, li carichiamo (e riapriamo quello attivo);
+       per chi aveva il vecchio formato (campo "percorso" con un solo viaggio)
+       lo convertiamo in un viaggio di nome "Il mio viaggio" */
+      if (Array.isArray(d.viaggi) && d.viaggi.length) {
+        stato.viaggi = d.viaggi.filter(v => v && typeof v === 'object' && Array.isArray(v.tappe));
+        stato.viaggioAttivo = (d.viaggioAttivo && stato.viaggi.some(v => v.nome === d.viaggioAttivo)) ? d.viaggioAttivo : stato.viaggi[0].nome;
+      } else if (Array.isArray(d.percorso) && d.percorso.length) {
+        stato.viaggi = [{ nome: 'Il mio viaggio', tappe: d.percorso }];
+        stato.viaggioAttivo = 'Il mio viaggio';
+      } else {
+        stato.viaggi = [];
+        stato.viaggioAttivo = null;
+      }
       salva();
       salvaCache();
       salvaCasa();
