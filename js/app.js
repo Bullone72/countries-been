@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VER = 'v1.25.1';
+const APP_VER = 'v1.25.2';
 
 /* ============================================================
    Countries Been 3D — logica applicativa
@@ -303,6 +303,13 @@ function salva() {
   try { localStorage.setItem(LS_ORDINE, JSON.stringify(stato.visiteOrdine)); } catch (e) {}
   try { localStorage.setItem(LS_DATA, JSON.stringify(stato.visiteData)); } catch (e) {}
   try { localStorage.setItem(LS_VIAGGI, JSON.stringify({ viaggi: stato.viaggi, attivo: stato.viaggioAttivo })); } catch (e) {}
+  /* ridondanza: le tappe del viaggio attivo restano anche in LS_PERCORSO
+     (formato storico): se un aggiornamento futuro svuotasse i viaggi, il
+     vecchio canale permette di ripristinarli come primo viaggio. */
+  try {
+    const att = viaggioAttivoObj();
+    localStorage.setItem(LS_PERCORSO, JSON.stringify(att ? att.tappe : []));
+  } catch (e) {}
 }
 
 function salvaCache() {
@@ -1610,7 +1617,7 @@ function aggiornaPunti() {
     globo2d.pointsData(puntiVisibili());
     globo2d.labelsData(etichetteVisibili());
   } catch (e) {}
-  aggiornaHUD();
+  rimuoviDebugHUD();
 }
 
 /* vista Percorsi: aggiunge/rimuove una tappa dal viaggio ATTIVO.
@@ -2483,7 +2490,6 @@ async function avvia() {
     document.getElementById('caricamento').classList.add('nascosto');
     setTimeout(() => document.getElementById('caricamento').remove(), 600);
     toast('✅ Aggiornata alla versione ' + APP_VER + ' 👆 Tocca una nazione per iniziare', 4500);
-    aggiornaHUD();
 
     /* verifica dopo 4 secondi che il canvas esista */
     setTimeout(() => {
@@ -2502,23 +2508,16 @@ async function avvia() {
 
 /* ---------------- eventi interfaccia ---------------- */
 
-/* contatore live: punti e nomi visibili a schermo, aggiornato durante lo zoom */
-function aggiornaHUD() {
+/* ---------------- diagnostica visibile (utile se il PC non disegna il globo) ---------------- */
+
+/* rimuove la vecchia barra di debug "punti/nomi/zoom" (bottom-left): copriva
+   le righe in fondo al pannello (es. "+ Nuovo viaggio") */
+function rimuoviDebugHUD() {
   try {
-    let el = document.getElementById('hud-counts');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'hud-counts';
-      el.style.cssText = 'position:fixed;bottom:8px;left:12px;z-index:9999;background:rgba(8,14,32,0.8);color:#bfe0ff;font:12px system-ui;padding:5px 9px;border-radius:7px;pointer-events:none;white-space:pre';
-      document.body.appendChild(el);
-    }
-    const dc = globo2d ? globo2d.debugCounts() : { punti: -1, etichette: -1 };
-    const alt = liveAltitudine();
-    el.textContent = 'punti=' + dc.punti + '  nomi=' + dc.etichette + (alt != null ? '  zoom=' + alt.toFixed(2) : '');
+    const el = document.getElementById('hud-counts');
+    if (el) el.remove();
   } catch (e) {}
 }
-
-/* ---------------- diagnostica visibile (utile se il PC non disegna il globo) ---------------- */
 
 function mostraDiagnostico(testo) {
   const d = document.getElementById('diag');
